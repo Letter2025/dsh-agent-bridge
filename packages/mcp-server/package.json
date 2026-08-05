@@ -1,0 +1,18 @@
+{
+  "name": "@qoder-agent-bridge/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Future MCP server for Qoder Agent Bridge.",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  }
+}

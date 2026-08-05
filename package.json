@@ -1,0 +1,28 @@
+{
+  "name": "qoder-agent-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bridge Qoder into your agent workflow through Skills or MCP.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsdown && chmod +x dist/skill/qoder-agent/scripts/run_qoder.js",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0",
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
