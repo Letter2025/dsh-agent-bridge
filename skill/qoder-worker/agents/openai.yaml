@@ -1,4 +1,4 @@
 interface:
   display_name: "Qoder Worker"
-  short_description: "Delegate bounded coding to Qoder"
-  default_prompt: "Use $qoder-worker to delegate a bounded coding task to the local Qoder CLI."
+  short_description: "Review isolated Qoder work before applying"
+  default_prompt: "Use $qoder-worker to run bounded Qoder work in an isolated worktree and review its diff before applying it."

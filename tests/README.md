@@ -1,9 +1,10 @@
 # Tests
 
 Runner tests use a fake child-process boundary and never start the real Qoder
-CLI. They cover argument construction, validation, executable/configuration
-resolution, process-group termination, output bounds, redaction, envelopes,
-and direct module import.
+CLI and a local temporary Git fixture. They cover Runner argument construction,
+validation, executable/configuration resolution, process-group termination,
+output bounds, redaction, envelopes, direct module import, and the isolated
+worktree review/apply lifecycle.
 
 Run the complete deterministic suite with:
 

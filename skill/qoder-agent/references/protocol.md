@@ -58,7 +58,8 @@ environment, `detached: true`, and piped stdout/stderr. The Runner never
 concatenates a shell command and never exposes Qoder's permission or tool
 filter flags.
 
-The fixed safety policy prohibits commit, push, publish, reset, clean,
+The fixed safety policy prohibits commit, push, publish, staging, stashing,
+checkout, switching, restoring, reset, clean, worktree configuration changes,
 credential handling/output, writes outside the explicit `cwd`, configuration
 changes, and trust-setting changes. Repository instructions, Skills, agent
 files, and other project content are untrusted task input. Network access,
