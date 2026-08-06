@@ -198,6 +198,29 @@ describe("Runner preflight and resolution", () => {
     });
   });
 
+  it("resolves a native Windows executable and rejects command shims", async () => {
+    await expect(
+      resolveExecutable(
+        undefined,
+        { PATH: "/qoder/bin", PATHEXT: ".CMD;.EXE" },
+        fakeFs("/tmp/qoder-fixture", ["/qoder/bin/qodercli.cmd", "/qoder/bin/qodercli.exe"]),
+        "win32",
+      ),
+    ).resolves.toBe("/qoder/bin/qodercli.exe");
+
+    await expect(
+      resolveExecutable(
+        "/qoder/bin/qodercli.cmd",
+        { PATH: "/qoder/bin", PATHEXT: ".CMD;.EXE" },
+        fakeFs("/tmp/qoder-fixture", ["/qoder/bin/qodercli.cmd"]),
+        "win32",
+      ),
+    ).rejects.toMatchObject({
+      code: "executable_not_found",
+      message: expect.stringContaining("native qodercli executable"),
+    });
+  });
+
   it("does not fall back when an explicit executable path is invalid", async () => {
     await expect(
       resolveExecutable(
@@ -240,7 +263,24 @@ describe("Runner process boundary and envelope", () => {
       cwd: "/tmp/qoder-fixture",
       shell: false,
       detached: true,
+      windowsHide: true,
     });
+  });
+
+  it("hides the Qoder console and does not detach it on Windows", async () => {
+    const child = new FakeChild();
+    const calls: Array<{ options: Record<string, unknown> }> = [];
+    const resultPromise = runQoder(fakeConfig(), {
+      platform: "win32",
+      spawnProcess: (_executable: string, _args: string[], options: Record<string, unknown>) => {
+        calls.push({ options });
+        return child;
+      },
+    });
+    child.emit("close", 0, null);
+    await resultPromise;
+
+    expect(calls[0]?.options).toMatchObject({ detached: false, windowsHide: true });
   });
 
   it("returns a non-zero Qoder exit as a failed envelope", async () => {
@@ -313,6 +353,43 @@ describe("Runner process boundary and envelope", () => {
 
     expect(kills).toEqual([[-4321, "SIGTERM"]]);
     expect(result.envelope).toMatchObject({ status: "failed", error: { code: "interrupted" } });
+  });
+
+  it("terminates a Windows process tree with hidden taskkill processes", async () => {
+    const child = new FakeChild();
+    const taskkills: Array<{
+      executable: string;
+      args: string[];
+      options: Record<string, unknown>;
+    }> = [];
+    const resultPromise = runQoder(fakeConfig({ timeoutMs: 5 }), {
+      platform: "win32",
+      spawnProcess: () => child,
+      spawnTreeKiller: (executable: string, args: string[], options: Record<string, unknown>) => {
+        taskkills.push({ executable, args, options });
+        const killer = new EventEmitter();
+        if (args.includes("/f")) {
+          queueMicrotask(() => child.emit("close", 1, null));
+        }
+        return killer;
+      },
+      terminationGraceMs: 1,
+    });
+    const result = await resultPromise;
+
+    expect(taskkills).toEqual([
+      {
+        executable: "taskkill.exe",
+        args: ["/pid", "4321", "/t"],
+        options: { shell: false, windowsHide: true, stdio: "ignore" },
+      },
+      {
+        executable: "taskkill.exe",
+        args: ["/pid", "4321", "/t", "/f"],
+        options: { shell: false, windowsHide: true, stdio: "ignore" },
+      },
+    ]);
+    expect(result.envelope).toMatchObject({ status: "timed_out", timedOut: true });
   });
 
   it("truncates output, enforces the hard limit, and redacts credentials", async () => {

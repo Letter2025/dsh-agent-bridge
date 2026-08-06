@@ -15,7 +15,9 @@ worker 式委派的兼容入口 `qoder-worker`；MCP、ACP、会话编排和会�
 
 请将 `qodercli` 加入 Codex 进程的 `PATH`，或通过 `QODERCLI_PATH`
 （单次调用可用 `--qodercli-path`）配置其绝对路径。Runner 不会猜测某个用户主目录
-下的安装位置。Runner 会记录验证时使用的 Qoder 版本，但不会因版本不同而硬失败。
+下的安装位置。在 Windows 上必须配置原生 `qodercli.exe`；Runner 会拒绝
+`qodercli.cmd`、`qodercli.bat` 等命令 shim，以便保持 `shell: false` 和参数边界。
+Runner 会记录验证时使用的 Qoder 版本，但不会因版本不同而硬失败。
 
 ## 安装 Skill
 
@@ -44,7 +46,7 @@ node skill/qoder-agent/scripts/run_qoder.mjs \
 可选参数为 `--qodercli-path`、`--model` 和 `--timeout-ms`，对应环境变量为
 `QODERCLI_PATH`、`QODER_MODEL` 和 `QODER_TIMEOUT_MS`。Runner 始终使用
 `permission-mode auto`、JSON 输出、禁用会话持久化、参数数组启动、输出限制、
-脱敏和进程组终止。
+脱敏、隐藏 Windows 子进程和按平台终止进程树。
 
 可通过 `$qoder-agent` 或 `$qoder-worker` 调用，两者使用同一个 Runner。请阅读
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) 了解 Codex 协作

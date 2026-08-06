@@ -4,7 +4,7 @@
 import { spawn } from "node:child_process";
 import { constants as fsConstants, realpathSync } from "node:fs";
 import { access, realpath, stat } from "node:fs/promises";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { delimiter, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const RUNNER_VERSION = "0.1.0";
@@ -99,7 +99,9 @@ const PROMPT_REPLACEMENT = "[PROMPT OMITTED]";
 /**
  * @typedef {Object} RunnerDependencies
  * @property {SpawnLike} [spawnProcess]
+ * @property {SpawnLike} [spawnTreeKiller]
  * @property {KillLike} [killProcess]
+ * @property {NodeJS.Platform} [platform]
  * @property {() => number} [now]
  * @property {typeof setTimeout} [setTimer]
  * @property {typeof clearTimeout} [clearTimer]
@@ -278,22 +280,55 @@ async function resolveExecutableFile(candidate, fsApi) {
  * Resolve the CLI without invoking a shell. A configured path is authoritative
  * and therefore does not fall through to PATH when it is invalid.
  *
+ * @param {string} candidate
+ * @param {NodeJS.Platform} platform
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string[]}
+ */
+function executableCandidates(candidate, platform, env) {
+  if (platform !== "win32" || extname(candidate) !== "") {
+    return [candidate];
+  }
+  const extensions = (env.PATHEXT ?? ".COM;.EXE;.CMD;.BAT")
+    .split(";")
+    .map((extension) => extension.trim().toLowerCase())
+    .filter((extension) => extension !== "");
+  return [candidate, ...extensions.map((extension) => `${candidate}${extension}`)];
+}
+
+/**
+ * @param {string} candidate
+ * @param {NodeJS.Platform} platform
+ */
+function isWindowsCommandShim(candidate, platform) {
+  return platform === "win32" && [".cmd", ".bat"].includes(extname(candidate).toLowerCase());
+}
+
+/**
  * @param {string | undefined} explicitPath
  * @param {NodeJS.ProcessEnv} env
  * @param {RunnerFs} fsApi
+ * @param {NodeJS.Platform} platform
  * @returns {Promise<string>}
  */
-export async function resolveExecutable(explicitPath, env = process.env, fsApi = DEFAULT_FS) {
+export async function resolveExecutable(
+  explicitPath,
+  env = process.env,
+  fsApi = DEFAULT_FS,
+  platform = process.platform,
+) {
   const configuredPath = explicitPath ?? env.QODERCLI_PATH;
   if (configuredPath !== undefined && configuredPath.trim() !== "") {
-    const resolved = await resolveExecutableFile(configuredPath, fsApi);
-    if (resolved === null) {
-      throw new RunnerError(
-        "executable_not_found",
-        "The configured Qoder executable is unavailable.",
-      );
+    for (const candidate of executableCandidates(configuredPath, platform, env)) {
+      const resolved = await resolveExecutableFile(candidate, fsApi);
+      if (resolved !== null && !isWindowsCommandShim(resolved, platform)) {
+        return resolved;
+      }
     }
-    return resolved;
+    throw new RunnerError(
+      "executable_not_found",
+      "The configured Qoder executable is unavailable or is a Windows command shim; configure the native qodercli executable.",
+    );
   }
 
   const pathValue = env.PATH ?? "";
@@ -301,9 +336,11 @@ export async function resolveExecutable(explicitPath, env = process.env, fsApi =
     if (directory.trim() === "") {
       continue;
     }
-    const resolved = await resolveExecutableFile(join(directory, "qodercli"), fsApi);
-    if (resolved !== null) {
-      return resolved;
+    for (const candidate of executableCandidates(join(directory, "qodercli"), platform, env)) {
+      const resolved = await resolveExecutableFile(candidate, fsApi);
+      if (resolved !== null && !isWindowsCommandShim(resolved, platform)) {
+        return resolved;
+      }
     }
   }
 
@@ -500,7 +537,9 @@ export function createEnvelope(values) {
  */
 export function runQoder(config, dependencies = {}) {
   const spawnProcess = dependencies.spawnProcess ?? spawn;
+  const spawnTreeKiller = dependencies.spawnTreeKiller ?? spawn;
   const killProcess = dependencies.killProcess ?? ((pid, signal) => process.kill(pid, signal));
+  const platform = dependencies.platform ?? process.platform;
   const now = dependencies.now ?? (() => performance.now());
   const setTimer = dependencies.setTimer ?? setTimeout;
   const clearTimer = dependencies.clearTimer ?? clearTimeout;
@@ -533,12 +572,25 @@ export function runQoder(config, dependencies = {}) {
     };
 
     /** @param {NodeJS.Signals} signal */
-    const killGroup = (signal) => {
+    const terminateTree = (signal) => {
       if (child?.pid === undefined || child.pid === null) {
         return;
       }
       try {
-        killProcess(-child.pid, signal);
+        if (platform === "win32") {
+          const taskkillArgs = ["/pid", String(child.pid), "/t"];
+          if (signal === "SIGKILL") {
+            taskkillArgs.push("/f");
+          }
+          const killer = spawnTreeKiller("taskkill.exe", taskkillArgs, {
+            shell: false,
+            windowsHide: true,
+            stdio: "ignore",
+          });
+          killer.once?.("error", () => undefined);
+        } else {
+          killProcess(-child.pid, signal);
+        }
       } catch (error) {
         if (!(error instanceof Error && /** @type {{code?: string}} */ (error).code === "ESRCH")) {
           // The child close event remains authoritative. Avoid leaking OS errors.
@@ -552,8 +604,8 @@ export function runQoder(config, dependencies = {}) {
         return;
       }
       terminationReason = reason;
-      killGroup("SIGTERM");
-      graceHandle = setTimer(() => killGroup("SIGKILL"), terminationGraceMs);
+      terminateTree("SIGTERM");
+      graceHandle = setTimer(() => terminateTree("SIGKILL"), terminationGraceMs);
     };
 
     /**
@@ -636,7 +688,8 @@ export function runQoder(config, dependencies = {}) {
         cwd: config.cwd,
         env: process.env,
         shell: false,
-        detached: true,
+        detached: platform !== "win32",
+        windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch {

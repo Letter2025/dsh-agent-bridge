@@ -32,6 +32,9 @@ installation-specific location. Add `qodercli` to `PATH`, set
 `QODERCLI_PATH`, or pass `--qodercli-path` on each machine. The verification
 baseline is whatever `qodercli --version` reports at verification time; the
 Runner does not reject other Qoder versions.
+On Windows, the resolved executable must be the native `qodercli.exe` rather
+than a `.cmd` or `.bat` shim. This keeps shell execution disabled and preserves
+the Runner's argument-array safety boundary.
 
 Supported configuration uses CLI over environment over defaults:
 
@@ -54,9 +57,11 @@ qodercli --print --cwd <normalized-cwd> --permission-mode auto
 ```
 
 The process is started with an argument array, `shell: false`, inherited
-environment, `detached: true`, and piped stdout/stderr. The Runner never
-concatenates a shell command and never exposes Qoder's permission or tool
-filter flags.
+environment, piped stdout/stderr, and `windowsHide: true`. On POSIX systems it
+uses `detached: true` to create a process group that can be terminated as a
+unit. On Windows it does not detach the process and uses hidden `taskkill.exe`
+processes to terminate the child process tree. The Runner never concatenates a
+shell command and never exposes Qoder's permission or tool filter flags.
 
 The fixed safety policy prohibits commit, push, publish, staging, stashing,
 checkout, switching, restoring, reset, clean, worktree configuration changes,

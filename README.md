@@ -16,6 +16,9 @@ for this milestone.
 
 Make `qodercli` available on `PATH` for the Codex process, or configure its
 absolute path with `QODERCLI_PATH` (or `--qodercli-path` for one invocation).
+On Windows, configure the native `qodercli.exe`; command shims such as
+`qodercli.cmd` and `qodercli.bat` are rejected so the Runner can keep
+`shell: false` and preserve argument boundaries.
 The Runner never guesses an installation path beneath a user's home directory.
 It records the Qoder version used during verification but does not hard-fail on
 a different CLI version.
@@ -49,7 +52,7 @@ Optional flags are `--qodercli-path`, `--model`, and `--timeout-ms`. The
 environment equivalents are `QODERCLI_PATH`, `QODER_MODEL`, and
 `QODER_TIMEOUT_MS`. The Runner always uses `permission-mode auto`, JSON output,
 no session persistence, argument-array spawning, output bounds, redaction,
-and process-group termination.
+hidden Windows subprocesses, and platform-specific process-tree termination.
 
 Invoke `$qoder-agent` or `$qoder-worker`; both use the same Runner. Read
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) for the Codex

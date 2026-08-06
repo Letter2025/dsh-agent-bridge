@@ -152,7 +152,12 @@ async function runGit(cwd, args, options = {}) {
   const allowed = new Set(options.allowExitCodes ?? [0]);
   const maxBytes = options.maxBytes ?? MAX_GIT_OUTPUT_BYTES;
   return await new Promise((resolveOutput, rejectOutput) => {
-    const child = spawn("git", args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("git", args, {
+      cwd,
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     /** @type {Buffer[]} */
     const stdout = [];
     /** @type {Buffer[]} */
