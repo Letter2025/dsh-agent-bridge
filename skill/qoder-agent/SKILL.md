@@ -9,6 +9,22 @@ Use the bundled Runner to delegate one narrowly scoped coding task to the
 locally installed Qoder CLI. Keep the task small enough to review as one diff
 and provide the absolute project directory explicitly.
 
+## Host Execution Requirement
+
+When invoking the Runner from Codex, run that exact command with host access
+(`sandbox_permissions: "require_escalated"`) after obtaining the user's
+approval. Qoder CLI needs access to its local authentication state and to the
+host network, including any loopback proxy. A restricted command sandbox can
+isolate both; Qoder may then fail before work begins with a network error even
+when the desktop app is signed in and its proxy is healthy.
+
+Keep the escalation narrow: it applies only to the single `node
+.../run_qoder.mjs` invocation and needs a justification that Qoder requires
+host authentication and network access. Do not request a reusable broad
+approval for arbitrary Node or shell commands. Host execution does not relax
+the Runner's fixed safety policy, absolute `cwd` requirement, or Qoder
+`permission-mode auto`.
+
 ## Invoke the Runner
 
 Run:
@@ -18,6 +34,10 @@ node /path/to/qoder-agent/scripts/run_qoder.mjs \
   --cwd /absolute/path/to/project \
   --prompt "Implement the bounded task and run the relevant tests. Do not commit or push."
 ```
+
+In Codex, submit this command with `sandbox_permissions:
+"require_escalated"`. Never use an escalation to add Qoder permission
+overrides, tool filters, or system-prompt overrides.
 
 Optional configuration flags are `--qodercli-path`, `--model`, and
 `--timeout-ms`. Their environment equivalents are `QODERCLI_PATH`,
