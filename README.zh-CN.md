@@ -2,20 +2,61 @@
 
 [English](README.md)
 
-通过 Skill 或 MCP 将 Qoder 接入你的 Agent 工作流。
-
-当前仓库仅包含项目骨架和 Qoder 集成所需的基础配置。Qoder 运行器、MCP
-服务器、协议行为以及正式测试均按约定保留为占位内容，留待后续里程碑实现。
+通过受边界约束的一次性 Codex Skill 将本机 Qoder 接入 Agent 工作流。
+第一阶段包含可复用的 `qoder-agent` Skill 和本地 Qoder CLI Runner，以及用于
+worker 式委派的兼容入口 `qoder-worker`；MCP、ACP、会话编排和会话续接不属于
+本阶段范围。
 
 ## 环境要求
 
 - Node.js `>=22.18.0`
 - pnpm `9.15.4` 或兼容的 pnpm 9 版本
+- 已安装并完成登录的本地 Qoder CLI
 
-## 开发
+请将 `qodercli` 加入 Codex 进程的 `PATH`，或通过 `QODERCLI_PATH`
+（单次调用可用 `--qodercli-path`）配置其绝对路径。Runner 不会猜测某个用户主目录
+下的安装位置。Runner 会记录验证时使用的 Qoder 版本，但不会因版本不同而硬失败。
+
+## 安装 Skill
+
+项目级安装：
+
+```sh
+mkdir -p /path/to/project/.codex/skills
+cp -R skill/qoder-agent /path/to/project/.codex/skills/qoder-agent
+cp -R skill/qoder-worker /path/to/project/.codex/skills/qoder-worker
+```
+
+个人级安装：将两个目录复制到 `~/.codex/skills/` 或已配置的 Codex Skill 目录。
+`qoder-worker` 是依赖同目录 `qoder-agent` 的兼容别名；请保留后者
+`scripts/run_qoder.mjs` 的可执行权限。
+
+## 运行 Runner
+
+命令必须提供绝对项目目录和有边界的任务提示词：
+
+```sh
+node skill/qoder-agent/scripts/run_qoder.mjs \
+  --cwd /absolute/path/to/project \
+  --prompt "实现指定改动并运行相关测试，不要提交或推送。"
+```
+
+可选参数为 `--qodercli-path`、`--model` 和 `--timeout-ms`，对应环境变量为
+`QODERCLI_PATH`、`QODER_MODEL` 和 `QODER_TIMEOUT_MS`。Runner 始终使用
+`permission-mode auto`、JSON 输出、禁用会话持久化、参数数组启动、输出限制、
+脱敏和进程组终止。
+
+可通过 `$qoder-agent` 或 `$qoder-worker` 调用，两者使用同一个 Runner。请阅读
+[skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) 了解 Codex 协作
+流程，并阅读
+[skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
+了解结果 envelope。
+
+## 开发检查
 
 ```sh
 pnpm install
+pnpm skill:check
 pnpm typecheck
 pnpm lint
 pnpm format:check
@@ -23,18 +64,35 @@ pnpm test
 pnpm build
 ```
 
-## 目录结构
+Skill Runner 直接从 `skill/qoder-agent/` 执行；package 构建只覆盖现有 workspace
+包，不会在 `dist/` 下生成第二份 Runner。
 
-- `skill/qoder-agent/` — 后续实现的可复用 Skill 和 Qoder 运行器。
-- `packages/core/` — 计划供各集成复用的共享核心包。
-- `packages/mcp-server/` — 后续实现的 MCP Server 包。
-- `docs/` — 项目文档。
-- `examples/` — 使用示例。
-- `tests/` — 自动化测试。
+## 可选真实验收
 
-## 当前状态
+默认检查使用 fake child-process boundary，不会调用 Qoder 模型。如需显式执行端到端
+验收，请在项目仓库之外创建临时仓库并手动创建 baseline commit：
 
-仅完成项目初始化。各预留目录中的占位文档记录了当前范围。
+```sh
+fixture="$(mktemp -d /tmp/qoder-agent-fixture.XXXXXX)"
+printf 'before\n' > "$fixture/example.txt"
+git -C "$fixture" init
+git -C "$fixture" config user.name "Qoder Fixture"
+git -C "$fixture" config user.email "qoder-fixture@example.invalid"
+git -C "$fixture" add example.txt
+git -C "$fixture" commit -m baseline
+
+qodercli --version
+node skill/qoder-agent/scripts/run_qoder.mjs \
+  --cwd "$fixture" \
+  --prompt "将 example.txt 增加一行，运行相关检查，不要 commit、push、publish、reset 或 clean。"
+
+git -C "$fixture" status --short
+git -C "$fixture" diff
+git -C "$fixture" remote -v
+```
+
+如果 Qoder 返回权限拒绝、认证失败、超时或其他失败，停止并检查返回 envelope，
+不要切换到其他权限模式重试。
 
 ## 许可证
 

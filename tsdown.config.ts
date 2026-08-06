@@ -23,14 +23,4 @@ export default defineConfig([
     treeshake: false,
     clean: true,
   },
-  {
-    entry: "skill/qoder-agent/scripts/run_qoder.ts",
-    outDir: "dist/skill/qoder-agent/scripts",
-    outExtensions: outputExtensions,
-    format: ["esm"],
-    dts: false,
-    sourcemap: true,
-    treeshake: false,
-    clean: true,
-  },
 ]);

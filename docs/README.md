@@ -1,7 +1,49 @@
-# Documentation
+# Qoder Agent and Worker Skills
 
-This directory is reserved for English project documentation.
+The first milestone is intentionally a small one-shot adapter. Codex remains
+the planning, review, and acceptance agent; Qoder receives only a bounded task
+prompt and an explicit trusted working directory. `qoder-worker` is a
+compatibility entry point that delegates through `qoder-agent`; it is not a
+native Codex subagent.
 
-The initialization milestone does not add feature documentation. Future
-documents will cover the Skill, the shared core, the MCP server, security
-constraints, and supported Qoder integrations.
+## Operating contract
+
+- Use `node skill/qoder-agent/scripts/run_qoder.mjs --cwd <absolute-path> --prompt <text>`.
+- Keep `cwd` outside the Runner's implicit state; no current-directory fallback exists.
+- Make `qodercli` available on `PATH` for the Codex process, or configure an
+  absolute `QODERCLI_PATH`; the Runner never probes a user-specific home path.
+- Keep prompts free of tokens, passwords, API keys, and other credentials.
+- Treat the returned envelope as execution evidence, not as a replacement for
+  inspecting the actual diff and tests.
+- Stop on permission denial, authentication failure, timeout, non-zero exit, or
+  malformed/unsupported Qoder behavior. Do not retry with broader permissions.
+- Never ask Qoder to commit, push, publish, reset, clean, or edit outside the
+  explicit project directory.
+
+## Installation
+
+Copy both Skill directories to either:
+
+- `<project>/.codex/skills/qoder-agent/` for project-local use;
+- `<project>/.codex/skills/qoder-worker/` for the worker-style alias;
+- `~/.codex/skills/qoder-agent/` or the configured Codex skills directory for
+  personal use, alongside `qoder-worker/`.
+
+`qoder-agent` contains `SKILL.md`, `agents/openai.yaml`, the protocol
+reference, and the executable `scripts/run_qoder.mjs`. `qoder-worker` contains
+the alias metadata and instructions, and requires the co-installed
+`qoder-agent`. No compiled Skill artifact is required.
+
+## Verification evidence
+
+The deterministic suite uses a fake child-process boundary and covers command
+construction, preflight validation, process lifecycle, output limits, and
+redaction. A real Qoder run is intentionally opt-in. When performing one,
+create a temporary Git repository outside this project, make its baseline
+commit manually, leave its remote list empty, invoke the Runner once, and
+independently inspect `git status --short`, `git diff`, and the returned
+envelope. The Runner must not create commits or push changes.
+
+The local verification baseline records `qodercli --version` but accepts a
+different installed version unless a future protocol explicitly requires a
+compatibility gate.

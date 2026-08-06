@@ -6,10 +6,11 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "tsdown && chmod +x dist/skill/qoder-agent/scripts/run_qoder.js",
+    "build": "tsdown",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
+    "skill:check": "node --check skill/qoder-agent/scripts/run_qoder.mjs && pnpm exec tsc --noEmit --project tsconfig.runner.json && pnpm test && if python3 -c 'import yaml' >/dev/null 2>&1; then python3 /Users/lei/.codex/skills/.system/skill-creator/scripts/quick_validate.py skill/qoder-agent && python3 /Users/lei/.codex/skills/.system/skill-creator/scripts/quick_validate.py skill/qoder-worker; else node scripts/validate_skill.mjs skill/qoder-agent && node scripts/validate_skill.mjs skill/qoder-worker; fi",
     "test": "vitest run",
     "typecheck": "tsc --noEmit --project tsconfig.json"
   },

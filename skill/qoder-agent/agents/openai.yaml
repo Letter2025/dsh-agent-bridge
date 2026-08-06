@@ -1,0 +1,4 @@
+interface:
+  display_name: "Qoder Agent"
+  short_description: "Delegate bounded coding tasks to Qoder"
+  default_prompt: "Use $qoder-agent to delegate a bounded coding task to the local Qoder CLI."
