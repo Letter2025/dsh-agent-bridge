@@ -48,11 +48,13 @@ node skill/qoder-agent/scripts/run_qoder.mjs \
   --prompt "Implement the requested change and run the relevant tests. Do not commit or push."
 ```
 
-Optional flags are `--qodercli-path`, `--model`, and `--timeout-ms`. The
-environment equivalents are `QODERCLI_PATH`, `QODER_MODEL`, and
-`QODER_TIMEOUT_MS`. The Runner always uses `permission-mode auto`, JSON output,
-no session persistence, argument-array spawning, output bounds, redaction,
-hidden Windows subprocesses, and platform-specific process-tree termination.
+Optional flags are `--qodercli-path`, `--model`, `--timeout-ms`, and
+`--max-model-request-retries`. The environment equivalents are
+`QODERCLI_PATH`, `QODER_MODEL`, `QODER_TIMEOUT_MS`, and
+`QODER_MAX_MODEL_REQUEST_RETRIES`. The Runner always uses `permission-mode
+auto`, JSON output, no session persistence, argument-array spawning, bounded
+model retries and output, redaction, hidden Windows subprocesses, and
+platform-specific process-tree termination.
 
 Invoke `$qoder-agent` or `$qoder-worker`; both use the same Runner. Read
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) for the Codex

@@ -4,6 +4,7 @@ import { PassThrough } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_MAX_MODEL_REQUEST_RETRIES,
   DEFAULT_TIMEOUT_MS,
   FIXED_SAFETY_POLICY,
   HARD_OUTPUT_LIMIT_BYTES,
@@ -11,6 +12,7 @@ import {
   buildQoderArgs,
   normalizeCwd,
   parseArgs,
+  parseModelRequestRetries,
   parseTimeout,
   redactSecrets,
   resolveConfig,
@@ -35,6 +37,7 @@ function fakeConfig(overrides: Record<string, unknown> = {}) {
     executable: "/tmp/qodercli",
     model: undefined,
     timeoutMs: 1000,
+    maxModelRequestRetries: DEFAULT_MAX_MODEL_REQUEST_RETRIES,
     signal: undefined,
     ...overrides,
   };
@@ -71,8 +74,14 @@ describe("Runner input and command construction", () => {
         "/tmp/qodercli",
         "--timeout-ms",
         "123",
+        "--max-model-request-retries",
+        "4",
       ]),
-    ).toMatchObject({ qodercliPath: "/tmp/qodercli", timeoutMs: "123" });
+    ).toMatchObject({
+      qodercliPath: "/tmp/qodercli",
+      timeoutMs: "123",
+      maxModelRequestRetries: "4",
+    });
     expect(() => parseArgs(["--cwd", "/tmp", "--prompt", " "])).toThrow(/--prompt/);
     expect(() =>
       parseArgs(["--cwd", "/tmp", "--prompt", "a".repeat(PROMPT_LIMIT_BYTES + 1)]),
@@ -87,6 +96,7 @@ describe("Runner input and command construction", () => {
       cwd: "/real/project",
       prompt: "task --with-dashes",
       model: "test-model",
+      maxModelRequestRetries: 3,
     });
 
     expect(args).toEqual([
@@ -98,6 +108,8 @@ describe("Runner input and command construction", () => {
       "--output-format",
       "json",
       "--no-session-persistence",
+      "--max-model-request-retries",
+      "3",
       "--model",
       "test-model",
       "--append-system-prompt",
@@ -114,6 +126,13 @@ describe("Runner input and command construction", () => {
     expect(() => parseTimeout("0")).toThrow(/between/);
     expect(() => parseTimeout("1800001")).toThrow(/between/);
     expect(() => parseTimeout("not-a-number")).toThrow(/positive integer/);
+  });
+
+  it("bounds Qoder's internal model request retries", () => {
+    expect(parseModelRequestRetries("0")).toBe(0);
+    expect(parseModelRequestRetries("10")).toBe(10);
+    expect(() => parseModelRequestRetries("11")).toThrow(/between 0 and 10/);
+    expect(() => parseModelRequestRetries("-1")).toThrow(/integer/);
   });
 });
 
@@ -139,12 +158,14 @@ describe("Runner preflight and resolution", () => {
         qodercliPath: "/tmp/cli-qoder",
         model: "cli-model",
         timeoutMs: "123",
+        maxModelRequestRetries: "4",
       },
       {
         PATH: "/tmp",
         QODERCLI_PATH: "/tmp/env-qoder",
         QODER_MODEL: "env-model",
         QODER_TIMEOUT_MS: "456",
+        QODER_MAX_MODEL_REQUEST_RETRIES: "5",
       },
       fsApi,
     );
@@ -154,6 +175,7 @@ describe("Runner preflight and resolution", () => {
       executable: "/tmp/cli-qoder",
       model: "cli-model",
       timeoutMs: 123,
+      maxModelRequestRetries: 4,
     });
   });
 
@@ -166,12 +188,14 @@ describe("Runner preflight and resolution", () => {
         qodercliPath: undefined,
         model: undefined,
         timeoutMs: undefined,
+        maxModelRequestRetries: undefined,
       },
       {
         PATH: "/empty",
         QODERCLI_PATH: "/tmp/env-qoder",
         QODER_MODEL: "env-model",
         QODER_TIMEOUT_MS: "456",
+        QODER_MAX_MODEL_REQUEST_RETRIES: "5",
       },
       fsApi,
     );
@@ -180,6 +204,7 @@ describe("Runner preflight and resolution", () => {
       executable: "/tmp/env-qoder",
       model: "env-model",
       timeoutMs: 456,
+      maxModelRequestRetries: 5,
     });
   });
 
@@ -294,6 +319,21 @@ describe("Runner process boundary and envelope", () => {
       status: "failed",
       exitCode: 7,
       error: { code: "qoder_exit_nonzero" },
+    });
+  });
+
+  it("classifies exact model queue exhaustion as explicitly recoverable", async () => {
+    const child = new FakeChild();
+    const resultPromise = runQoder(fakeConfig(), { spawnProcess: () => child });
+    child.stderr.emit("data", Buffer.from("model queue recovery attempts exceeded"));
+    child.emit("close", 1, null);
+    const result = await resultPromise;
+
+    expect(result.envelope).toMatchObject({
+      status: "failed",
+      retryable: true,
+      recovery: { strategy: "continue_in_existing_worktree" },
+      error: { code: "model_queue_exhausted" },
     });
   });
 

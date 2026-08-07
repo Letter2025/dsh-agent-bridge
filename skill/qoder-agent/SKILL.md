@@ -78,11 +78,12 @@ In Codex, submit this command with `sandbox_permissions:
 overrides, tool filters, or system-prompt overrides.
 
 Optional configuration flags are `--qodercli-path`, `--model`, and
-`--timeout-ms`. Their environment equivalents are `QODERCLI_PATH`,
-`QODER_MODEL`, and `QODER_TIMEOUT_MS`; CLI values take precedence. The Runner
-always uses Qoder `permission-mode auto`, JSON output, and no session
-persistence. Do not pass credentials, permission overrides, tool filters, or
-system-prompt overrides.
+`--timeout-ms`, and `--max-model-request-retries`. Their environment
+equivalents are `QODERCLI_PATH`, `QODER_MODEL`, `QODER_TIMEOUT_MS`, and
+`QODER_MAX_MODEL_REQUEST_RETRIES`; CLI values take precedence. The Runner
+defaults model request retries to three and always uses Qoder `permission-mode
+auto`, JSON output, and no session persistence. Do not pass credentials,
+permission overrides, tool filters, or system-prompt overrides.
 
 For a portable installation, make `qodercli` available on `PATH` for the
 Codex process, or configure an absolute `QODERCLI_PATH`. The Runner never
@@ -106,10 +107,45 @@ guesses a user-home installation path.
 6. If the result reports permission denial, authentication failure, timeout,
    non-zero exit, output-limit termination, or another failure, stop and report
    the envelope to the main Codex session. Do not retry automatically. Keep the
-   temporary worktree until the user explicitly asks to discard it.
+   temporary worktree until the user explicitly asks to discard it. Apply only
+   the narrow model-queue recovery below.
 7. After a successful run, issue at most two explicit correction tasks. Generate
    a new review session for every correction task; never loop without an
    explicit new task.
+
+## Recover a Model Queue Failure
+
+Treat only `error.code: model_queue_exhausted` with `retryable: true` as a
+recoverable queue failure. Do not generalize from other gateway, provider, or
+queue text.
+
+1. Run `qoder_worktree.mjs inspect --state <statePath>`. Do not run `diff`,
+   `apply`, or `dispose`; `diff` stages files and advances the session.
+2. Report the candidate files, `indexModified`, and retained worktree. If
+   `indexModified` is true, stop because Qoder violated the index boundary.
+3. Obtain explicit approval for one recovery continuation. Never retry
+   automatically or more than once.
+4. Re-run the Runner in the same `qoderCwd` and same prepared worktree. Restate
+   the original task and acceptance criteria, and instruct Qoder to inspect and
+   repair existing uncommitted changes rather than restart from scratch.
+5. After success, continue the original `diff`, independent checks, review, and
+   apply flow. Do not create a new review session for queue recovery; doing so
+   could turn the interrupted edits into an excluded baseline.
+
+Use this recovery prompt shape:
+
+```text
+Continue the interrupted bounded task from the existing uncommitted changes in
+this worktree. Inspect the current diff before editing and do not restart from
+scratch.
+
+Original task and acceptance criteria:
+<repeat the original bounded task and checks>
+
+Repair incomplete or invalid edits, complete the task, and run the relevant
+checks. Do not commit, stage, stash, reset, clean, or modify Git worktree
+configuration.
+```
 
 The Runner returns one JSON envelope on stdout and short diagnostics on
 stderr. Read [references/protocol.md](references/protocol.md) for the exact

@@ -7,10 +7,12 @@ import { access, realpath, stat } from "node:fs/promises";
 import { delimiter, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const RUNNER_VERSION = "0.1.0";
+export const RUNNER_VERSION = "0.2.0";
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_TIMEOUT_MS = 300_000;
 export const MAX_TIMEOUT_MS = 1_800_000;
+export const DEFAULT_MAX_MODEL_REQUEST_RETRIES = 3;
+export const MAX_MODEL_REQUEST_RETRIES = 10;
 export const DEFAULT_CAPTURE_LIMIT_BYTES = 256 * 1024;
 export const HARD_OUTPUT_LIMIT_BYTES = 1024 * 1024;
 export const PROMPT_LIMIT_BYTES = 64 * 1024;
@@ -29,6 +31,7 @@ export const FIXED_SAFETY_POLICY = [
 const DEFAULT_FS = { access, realpath, stat };
 const SECRET_REPLACEMENT = "[REDACTED]";
 const PROMPT_REPLACEMENT = "[PROMPT OMITTED]";
+const MODEL_QUEUE_EXHAUSTED_MESSAGE = "model queue recovery attempts exceeded";
 
 /** @typedef {import("node:child_process").ChildProcessWithoutNullStreams} ChildProcessLike */
 /** @typedef {(...args: any[]) => any} SpawnLike */
@@ -51,6 +54,7 @@ const PROMPT_REPLACEMENT = "[PROMPT OMITTED]";
  * @property {string | undefined} qodercliPath
  * @property {string | undefined} model
  * @property {string | undefined} timeoutMs
+ * @property {string | undefined} maxModelRequestRetries
  */
 
 /**
@@ -60,6 +64,7 @@ const PROMPT_REPLACEMENT = "[PROMPT OMITTED]";
  * @property {string} executable
  * @property {string | undefined} model
  * @property {number} timeoutMs
+ * @property {number} maxModelRequestRetries
  * @property {AbortSignal | undefined} signal
  */
 
@@ -87,6 +92,8 @@ const PROMPT_REPLACEMENT = "[PROMPT OMITTED]";
  * @property {boolean} stdoutTruncated
  * @property {boolean} stderrTruncated
  * @property {{format: "json", raw: string}} qoderOutput
+ * @property {boolean} retryable
+ * @property {{strategy: "continue_in_existing_worktree"} | null} recovery
  * @property {RunnerErrorShape | undefined} error
  */
 
@@ -149,7 +156,14 @@ function utf8ByteLength(value) {
 export function parseArgs(argv) {
   /** @type {Record<string, string | undefined>} */
   const values = {};
-  const options = new Set(["--cwd", "--prompt", "--qodercli-path", "--model", "--timeout-ms"]);
+  const options = new Set([
+    "--cwd",
+    "--prompt",
+    "--qodercli-path",
+    "--model",
+    "--timeout-ms",
+    "--max-model-request-retries",
+  ]);
   /** @type {Record<string, string>} */
   const optionKeys = {
     "--cwd": "cwd",
@@ -157,6 +171,7 @@ export function parseArgs(argv) {
     "--qodercli-path": "qodercliPath",
     "--model": "model",
     "--timeout-ms": "timeoutMs",
+    "--max-model-request-retries": "maxModelRequestRetries",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -198,6 +213,15 @@ export function parseArgs(argv) {
   if (values.timeoutMs !== undefined && !isNonEmptyString(values.timeoutMs)) {
     throw new RunnerError("invalid_input", "--timeout-ms must be non-empty when supplied.");
   }
+  if (
+    values.maxModelRequestRetries !== undefined &&
+    !isNonEmptyString(values.maxModelRequestRetries)
+  ) {
+    throw new RunnerError(
+      "invalid_input",
+      "--max-model-request-retries must be non-empty when supplied.",
+    );
+  }
 
   return {
     cwd,
@@ -205,6 +229,7 @@ export function parseArgs(argv) {
     qodercliPath: values.qodercliPath,
     model: values.model,
     timeoutMs: values.timeoutMs,
+    maxModelRequestRetries: values.maxModelRequestRetries,
   };
 }
 
@@ -225,6 +250,25 @@ export function parseTimeout(rawValue, source = "timeout") {
     throw new RunnerError(
       "invalid_input",
       `${source} must be between 1 and ${MAX_TIMEOUT_MS} milliseconds.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * @param {string | undefined} rawValue
+ * @param {string} source
+ * @returns {number}
+ */
+export function parseModelRequestRetries(rawValue, source = "model request retries") {
+  if (rawValue === undefined || rawValue.trim() === "" || !/^\d+$/.test(rawValue)) {
+    throw new RunnerError("invalid_input", `${source} must be an integer.`);
+  }
+  const value = Number(rawValue);
+  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_MODEL_REQUEST_RETRIES) {
+    throw new RunnerError(
+      "invalid_input",
+      `${source} must be between 0 and ${MAX_MODEL_REQUEST_RETRIES}.`,
     );
   }
   return value;
@@ -370,12 +414,30 @@ export async function resolveConfig(parsed, env = process.env, fsApi = DEFAULT_F
 
   const configuredModel = parsed.model ?? env.QODER_MODEL;
   const model = configuredModel?.trim() || undefined;
+  const configuredRetries = parsed.maxModelRequestRetries ?? env.QODER_MAX_MODEL_REQUEST_RETRIES;
+  const maxModelRequestRetries =
+    configuredRetries === undefined
+      ? DEFAULT_MAX_MODEL_REQUEST_RETRIES
+      : parseModelRequestRetries(
+          configuredRetries,
+          parsed.maxModelRequestRetries === undefined
+            ? "QODER_MAX_MODEL_REQUEST_RETRIES"
+            : "--max-model-request-retries",
+        );
 
-  return { cwd, prompt: parsed.prompt, executable, model, timeoutMs, signal: undefined };
+  return {
+    cwd,
+    prompt: parsed.prompt,
+    executable,
+    model,
+    timeoutMs,
+    maxModelRequestRetries,
+    signal: undefined,
+  };
 }
 
 /**
- * @param {{cwd: string, prompt: string, model?: string | undefined}} config
+ * @param {{cwd: string, prompt: string, model?: string | undefined, maxModelRequestRetries: number}} config
  * @returns {string[]}
  */
 export function buildQoderArgs(config) {
@@ -388,6 +450,8 @@ export function buildQoderArgs(config) {
     "--output-format",
     "json",
     "--no-session-persistence",
+    "--max-model-request-retries",
+    String(config.maxModelRequestRetries),
   ];
   if (config.model !== undefined) {
     args.push("--model", config.model);
@@ -505,6 +569,18 @@ export function redactSecrets(text, prompt = "") {
 }
 
 /**
+ * Classify only Qoder's exact, known model-queue exhaustion diagnostic. Broad
+ * gateway or queue matching could incorrectly retry authentication or provider
+ * configuration failures.
+ *
+ * @param {string} stdout
+ * @param {string} stderr
+ */
+export function isModelQueueExhausted(stdout, stderr) {
+  return `${stdout}\n${stderr}`.toLowerCase().includes(MODEL_QUEUE_EXHAUSTED_MESSAGE);
+}
+
+/**
  * @param {Partial<RunnerEnvelope> & {durationMs: number}} values
  * @returns {RunnerEnvelope}
  */
@@ -526,6 +602,8 @@ export function createEnvelope(values) {
     stdoutTruncated: values.stdoutTruncated ?? false,
     stderrTruncated: values.stderrTruncated ?? false,
     qoderOutput: values.qoderOutput ?? { format: "json", raw: values.stdout ?? "" },
+    retryable: values.retryable ?? false,
+    recovery: values.recovery ?? null,
     error: values.error,
   };
 }
@@ -629,6 +707,9 @@ export function runQoder(config, dependencies = {}) {
       let status = "failed";
       /** @type {RunnerErrorShape | undefined} */
       let error;
+      let retryable = false;
+      /** @type {RunnerEnvelope["recovery"]} */
+      let recovery = null;
       if (terminationReason === "timed_out") {
         status = "timed_out";
         error = { code: "timed_out", message: "Qoder execution exceeded the configured timeout." };
@@ -647,6 +728,13 @@ export function runQoder(config, dependencies = {}) {
         error = spawnError;
       } else if (exitCode === 0 && signal === null) {
         status = "succeeded";
+      } else if (isModelQueueExhausted(stdoutText, stderrText)) {
+        retryable = true;
+        recovery = { strategy: "continue_in_existing_worktree" };
+        error = {
+          code: "model_queue_exhausted",
+          message: "Qoder exhausted its model queue recovery attempts.",
+        };
       } else {
         error = {
           code: "qoder_exit_nonzero",
@@ -667,6 +755,8 @@ export function runQoder(config, dependencies = {}) {
         stdoutTruncated: stdout.truncated,
         stderrTruncated: stderr.truncated,
         qoderOutput: { format: "json", raw: stdoutText },
+        retryable,
+        recovery,
         error,
       });
       resolvePromise({ envelope, exitCode: status === "succeeded" ? 0 : 1 });

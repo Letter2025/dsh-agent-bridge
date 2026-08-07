@@ -56,12 +56,12 @@ class WorktreeError extends Error {
 
 /**
  * @param {string[]} argv
- * @returns {{command: "prepare" | "diff" | "apply" | "dispose", cwd?: string, state?: string, discard: boolean}}
+ * @returns {{command: "prepare" | "inspect" | "diff" | "apply" | "dispose", cwd?: string, state?: string, discard: boolean}}
  */
 export function parseArgs(argv) {
   const command = argv[0];
-  if (!["prepare", "diff", "apply", "dispose"].includes(command ?? "")) {
-    throw new WorktreeError("invalid_input", "Use prepare, diff, apply, or dispose.");
+  if (!["prepare", "inspect", "diff", "apply", "dispose"].includes(command ?? "")) {
+    throw new WorktreeError("invalid_input", "Use prepare, inspect, diff, apply, or dispose.");
   }
 
   /** @type {{cwd?: string, state?: string, discard: boolean}} */
@@ -112,7 +112,7 @@ export function parseArgs(argv) {
   }
 
   return {
-    command: /** @type {"prepare" | "diff" | "apply" | "dispose"} */ (command),
+    command: /** @type {"prepare" | "inspect" | "diff" | "apply" | "dispose"} */ (command),
     ...values,
   };
 }
@@ -404,6 +404,42 @@ export async function prepareWorktree(cwd) {
 }
 
 /**
+ * Inspect candidate changes without staging files, generating a patch, or
+ * advancing the session phase. This keeps an interrupted prepared worktree
+ * eligible for an explicitly approved recovery continuation.
+ *
+ * @param {string} statePath
+ * @returns {Promise<{session: WorktreeSession, hasChanges: boolean, changedFiles: string[], indexModified: boolean}>}
+ */
+export async function inspectWorktree(statePath) {
+  const session = await readSession(statePath);
+  const tracked = (
+    await runGit(session.worktreeRoot, ["diff", "--name-only", "-z", session.baselineTree])
+  )
+    .split("\0")
+    .filter((path) => path !== "");
+  const staged = (
+    await runGit(session.worktreeRoot, [
+      "diff",
+      "--name-only",
+      "--cached",
+      "-z",
+      session.baselineTree,
+    ])
+  )
+    .split("\0")
+    .filter((path) => path !== "");
+  const untracked = await listUntrackedFiles(session.worktreeRoot);
+  const changedFiles = [...new Set([...tracked, ...untracked])].sort();
+  return {
+    session,
+    hasChanges: changedFiles.length > 0,
+    changedFiles,
+    indexModified: staged.length > 0,
+  };
+}
+
+/**
  * Stage the post-Qoder state only in the temporary worktree, then emit the
  * binary patch from the preserved baseline to that state.
  *
@@ -501,6 +537,19 @@ export async function main(argv) {
       statePath: session.statePath,
       worktreeRoot: session.worktreeRoot,
       qoderCwd: session.worktreeCwd,
+    };
+  }
+  if (parsed.command === "inspect") {
+    const result = await inspectWorktree(/** @type {string} */ (parsed.state));
+    return {
+      status: "succeeded",
+      operation: "inspect",
+      phase: result.session.phase,
+      statePath: result.session.statePath,
+      qoderCwd: result.session.worktreeCwd,
+      hasChanges: result.hasChanges,
+      changedFiles: result.changedFiles,
+      indexModified: result.indexModified,
     };
   }
   if (parsed.command === "diff") {

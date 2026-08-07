@@ -10,7 +10,8 @@ parsing, or `stream-json` handling.
 ```text
 run_qoder.mjs --cwd <absolute-path> --prompt <text>
 run_qoder.mjs --cwd <absolute-path> --prompt <text> \
-  [--qodercli-path <absolute-path>] [--model <model>] [--timeout-ms <milliseconds>]
+  [--qodercli-path <absolute-path>] [--model <model>] [--timeout-ms <milliseconds>] \
+  [--max-model-request-retries <count>]
 ```
 
 `--cwd` and `--prompt` are mandatory. `cwd` must be an existing absolute
@@ -38,19 +39,22 @@ the Runner's argument-array safety boundary.
 
 Supported configuration uses CLI over environment over defaults:
 
-| Setting    | CLI               | Environment        | Default              |
-| ---------- | ----------------- | ------------------ | -------------------- |
-| executable | `--qodercli-path` | `QODERCLI_PATH`    | `qodercli` in `PATH` |
-| model      | `--model`         | `QODER_MODEL`      | unset; Qoder chooses |
-| timeout    | `--timeout-ms`    | `QODER_TIMEOUT_MS` | 300000 ms            |
+| Setting    | CLI                           | Environment                       | Default              |
+| ---------- | ----------------------------- | --------------------------------- | -------------------- |
+| executable | `--qodercli-path`             | `QODERCLI_PATH`                   | `qodercli` in `PATH` |
+| model      | `--model`                     | `QODER_MODEL`                     | unset; Qoder chooses |
+| timeout    | `--timeout-ms`                | `QODER_TIMEOUT_MS`                | 300000 ms            |
+| retries    | `--max-model-request-retries` | `QODER_MAX_MODEL_REQUEST_RETRIES` | 3                    |
 
 Timeout values must be positive integers and cannot exceed 1800000 ms. There
-is no permission-mode environment variable. The Runner always builds this
-argument array, with the prompt after `--`:
+is no permission-mode environment variable. Model request retries must be an
+integer from 0 through 10. The Runner always builds this argument array, with
+the prompt after `--`:
 
 ```text
 qodercli --print --cwd <normalized-cwd> --permission-mode auto
   --output-format json --no-session-persistence
+  --max-model-request-retries <count>
   [--model <model>]
   --append-system-prompt <fixed-safety-policy>
   -- <prompt>
@@ -89,6 +93,8 @@ object on stdout:
   "signal": null,
   "durationMs": 1234,
   "timedOut": false,
+  "retryable": false,
+  "recovery": null,
   "stdout": "...",
   "stderr": "",
   "stdoutTruncated": false,
@@ -114,14 +120,19 @@ interpreting Qoder's business JSON:
 - `executable_not_found`
 - `spawn_error`
 - `qoder_exit_nonzero`
+- `model_queue_exhausted`
 - `timed_out`
 - `output_limit`
 - `interrupted`
 - `internal_error`
 
 Qoder stdout is preserved as bounded raw text in `qoderOutput.raw`; it is not
-parsed for permission, authentication, or CLI-compatibility semantics. The
-calling Codex session may inspect that raw payload and the actual project diff.
+parsed broadly for permission, authentication, or CLI-compatibility semantics.
+The Runner recognizes only the exact known `model queue recovery attempts
+exceeded` diagnostic as `model_queue_exhausted`, sets `retryable: true`, and
+returns `recovery.strategy: continue_in_existing_worktree`. It never retries
+automatically. The calling Codex session may inspect the raw payload and the
+actual project diff.
 
 ## Output, redaction, and lifecycle
 

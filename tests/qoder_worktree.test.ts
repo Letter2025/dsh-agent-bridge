@@ -7,6 +7,7 @@ import {
   applyReviewPatch,
   createReviewPatch,
   disposeWorktree,
+  inspectWorktree,
   parseArgs,
   prepareWorktree,
 } from "../skill/qoder-agent/scripts/qoder_worktree.mjs";
@@ -44,6 +45,7 @@ describe("Qoder isolated worktree coordinator", () => {
     expect(() => parseArgs(["diff", "--state", "/tmp/session.json", "--discard"])).toThrow(
       /diff requires/,
     );
+    expect(() => parseArgs(["inspect", "--state", "/tmp/session.json"])).not.toThrow();
     expect(() => parseArgs(["dispose", "--state", "/tmp/session.json", "--discard"])).not.toThrow();
   });
 
@@ -65,6 +67,13 @@ describe("Qoder isolated worktree coordinator", () => {
 
     await writeFile(join(session.worktreeRoot, "tracked.txt"), "qoder result\n");
     await writeFile(join(session.worktreeRoot, "qoder-new.txt"), "new code\n");
+    const inspection = await inspectWorktree(session.statePath);
+    expect(inspection).toMatchObject({
+      hasChanges: true,
+      changedFiles: ["qoder-new.txt", "tracked.txt"],
+      indexModified: false,
+      session: { phase: "prepared" },
+    });
     const review = await createReviewPatch(session.statePath);
 
     expect(review.changedFiles).toEqual(["qoder-new.txt", "tracked.txt"]);
@@ -102,6 +111,13 @@ describe("Qoder isolated worktree coordinator", () => {
     const session = await prepareWorktree(root);
     await writeFile(join(session.worktreeRoot, "tracked.txt"), "staged by qoder\n");
     git(session.worktreeRoot, ["add", "tracked.txt"]);
+
+    await expect(inspectWorktree(session.statePath)).resolves.toMatchObject({
+      hasChanges: true,
+      changedFiles: ["tracked.txt"],
+      indexModified: true,
+      session: { phase: "prepared" },
+    });
 
     await expect(createReviewPatch(session.statePath)).rejects.toMatchObject({
       code: "git_index_modified",

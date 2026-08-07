@@ -43,10 +43,11 @@ node skill/qoder-agent/scripts/run_qoder.mjs \
   --prompt "实现指定改动并运行相关测试，不要提交或推送。"
 ```
 
-可选参数为 `--qodercli-path`、`--model` 和 `--timeout-ms`，对应环境变量为
-`QODERCLI_PATH`、`QODER_MODEL` 和 `QODER_TIMEOUT_MS`。Runner 始终使用
-`permission-mode auto`、JSON 输出、禁用会话持久化、参数数组启动、输出限制、
-脱敏、隐藏 Windows 子进程和按平台终止进程树。
+可选参数为 `--qodercli-path`、`--model`、`--timeout-ms` 和
+`--max-model-request-retries`，对应环境变量为 `QODERCLI_PATH`、
+`QODER_MODEL`、`QODER_TIMEOUT_MS` 和 `QODER_MAX_MODEL_REQUEST_RETRIES`。
+Runner 始终使用 `permission-mode auto`、JSON 输出、禁用会话持久化、参数数组启动、
+有界模型重试和输出限制、脱敏、隐藏 Windows 子进程和按平台终止进程树。
 
 可通过 `$qoder-agent` 或 `$qoder-worker` 调用，两者使用同一个 Runner。请阅读
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) 了解 Codex 协作
