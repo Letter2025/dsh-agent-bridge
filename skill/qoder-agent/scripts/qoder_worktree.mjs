@@ -52,11 +52,12 @@ class WorktreeError extends Error {
  * @property {string} baselineTree
  * @property {string} baselinePatchPath
  * @property {string} reviewPatchPath
+ * @property {string | null} retryOf
  */
 
 /**
  * @param {string[]} argv
- * @returns {{command: "prepare" | "inspect" | "diff" | "apply" | "dispose", cwd?: string, state?: string, discard: boolean}}
+ * @returns {{command: "prepare" | "inspect" | "diff" | "apply" | "dispose", cwd?: string, state?: string, retryOf?: string, discard: boolean}}
  */
 export function parseArgs(argv) {
   const command = argv[0];
@@ -64,7 +65,7 @@ export function parseArgs(argv) {
     throw new WorktreeError("invalid_input", "Use prepare, inspect, diff, apply, or dispose.");
   }
 
-  /** @type {{cwd?: string, state?: string, discard: boolean}} */
+  /** @type {{cwd?: string, state?: string, retryOf?: string, discard: boolean}} */
   const values = { discard: false };
   for (let index = 1; index < argv.length; index += 1) {
     const option = argv[index];
@@ -75,7 +76,7 @@ export function parseArgs(argv) {
       values.discard = true;
       continue;
     }
-    if (option !== "--cwd" && option !== "--state") {
+    if (option !== "--cwd" && option !== "--state" && option !== "--retry-of") {
       throw new WorktreeError("invalid_input", "Unsupported worktree coordinator argument.");
     }
     const value = argv[index + 1];
@@ -90,22 +91,31 @@ export function parseArgs(argv) {
         throw new WorktreeError("invalid_input", "--cwd was provided more than once.");
       }
       values.cwd = value;
-    } else {
+    } else if (option === "--state") {
       if (values.state !== undefined) {
         throw new WorktreeError("invalid_input", "--state was provided more than once.");
       }
       values.state = value;
+    } else {
+      if (values.retryOf !== undefined) {
+        throw new WorktreeError("invalid_input", "--retry-of was provided more than once.");
+      }
+      values.retryOf = value;
     }
     index += 1;
   }
 
   if (command === "prepare") {
     if (values.cwd === undefined || values.state !== undefined || values.discard) {
-      throw new WorktreeError("invalid_input", "prepare requires only --cwd <absolute-path>.");
+      throw new WorktreeError(
+        "invalid_input",
+        "prepare requires --cwd <absolute-path> and optionally --retry-of <state-path>.",
+      );
     }
   } else if (
     values.state === undefined ||
     values.cwd !== undefined ||
+    values.retryOf !== undefined ||
     (command !== "dispose" && values.discard)
   ) {
     throw new WorktreeError("invalid_input", `${command} requires only --state <absolute-path>.`);
@@ -307,9 +317,15 @@ async function readSession(statePath) {
   if (
     session.version !== WORKTREE_SESSION_VERSION ||
     !["prepared", "review_ready", "applied"].includes(session.phase ?? "") ||
-    requiredStrings.some((value) => typeof value !== "string")
+    requiredStrings.some((value) => typeof value !== "string") ||
+    (session.retryOf !== undefined &&
+      session.retryOf !== null &&
+      typeof session.retryOf !== "string")
   ) {
     throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+  }
+  if (typeof session.retryOf === "string") {
+    requireAbsolute(session.retryOf, "retryOf");
   }
   const storedSessionRoot = resolve(/** @type {string} */ (session.sessionRoot));
   let sessionRoot;
@@ -338,7 +354,97 @@ async function readSession(statePath) {
   assertInside(sessionRoot, baselinePatchPath);
   assertInside(sessionRoot, reviewPatchPath);
   assertInside(worktreeRoot, worktreeCwd);
-  return /** @type {WorktreeSession} */ ({ ...session, statePath: resolvedState });
+  return /** @type {WorktreeSession} */ ({
+    ...session,
+    retryOf: session.retryOf ?? null,
+    statePath: resolvedState,
+  });
+}
+
+/**
+ * @param {string} statePath
+ * @returns {Promise<boolean>}
+ */
+async function sessionFileExists(statePath) {
+  try {
+    await lstat(statePath);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Read the predecessor sessions from newest to oldest, validating that every
+ * session belongs to the source repository. A missing predecessor has
+ * already been cleaned and is therefore not an error.
+ *
+ * @param {string | null} retryOf
+ * @param {string} sourceRoot
+ * @returns {Promise<WorktreeSession[]>}
+ */
+async function readRetryChain(retryOf, sourceRoot) {
+  /** @type {WorktreeSession[]} */
+  const sessions = [];
+  const seen = new Set();
+  let statePath = retryOf;
+  while (statePath !== null) {
+    requireAbsolute(statePath, "retryOf");
+    if (seen.has(statePath)) {
+      throw new WorktreeError("invalid_state", "The retry session chain contains a cycle.");
+    }
+    seen.add(statePath);
+    if (!(await sessionFileExists(statePath))) {
+      break;
+    }
+    const session = await readSession(statePath);
+    if (resolve(session.sourceRoot) !== resolve(sourceRoot)) {
+      throw new WorktreeError(
+        "invalid_state",
+        "The retry session chain contains a session from another source worktree.",
+      );
+    }
+    sessions.push(session);
+    statePath = session.retryOf;
+  }
+  return sessions;
+}
+
+/**
+ * @param {WorktreeSession} session
+ * @param {boolean} discard
+ */
+async function disposeSession(session, discard) {
+  if (session.phase !== "applied" && !discard) {
+    throw new WorktreeError(
+      "confirmation_required",
+      "Pass --discard to remove a session whose reviewed changes were not applied.",
+    );
+  }
+  await runGit(session.sourceRoot, ["worktree", "remove", "--force", session.worktreeRoot]);
+  await rm(session.sessionRoot, { recursive: true, force: true });
+}
+
+/**
+ * Dispose predecessor sessions from oldest to newest. The current session is
+ * intentionally not included so it remains available if predecessor cleanup
+ * fails and the caller needs to retry the operation.
+ *
+ * @param {string | null} retryOf
+ * @param {string} sourceRoot
+ */
+async function disposeRetryChain(retryOf, sourceRoot) {
+  const sessions = await readRetryChain(retryOf, sourceRoot);
+  for (let index = sessions.length - 1; index >= 0; index -= 1) {
+    const session = sessions[index];
+    if (session === undefined) {
+      continue;
+    }
+    await disposeSession(session, session.phase !== "applied");
+  }
 }
 
 /**
@@ -346,10 +452,21 @@ async function readSession(statePath) {
  * worktree state. Its index is the pre-Qoder baseline.
  *
  * @param {string} cwd
+ * @param {string | undefined} retryOf
  * @returns {Promise<WorktreeSession>}
  */
-export async function prepareWorktree(cwd) {
+export async function prepareWorktree(cwd, retryOf = undefined) {
   const repository = await resolveRepository(cwd);
+  let retrySession = null;
+  if (retryOf !== undefined) {
+    retrySession = await readSession(retryOf);
+    if (resolve(retrySession.sourceRoot) !== resolve(repository.sourceRoot)) {
+      throw new WorktreeError(
+        "invalid_input",
+        "--retry-of must refer to a session from the same source worktree.",
+      );
+    }
+  }
   const sessionRoot = await mkdtemp(join(tmpdir(), SESSION_PREFIX));
   const worktreeRoot = join(sessionRoot, "worktree");
   const statePath = join(sessionRoot, STATE_FILE_NAME);
@@ -391,6 +508,7 @@ export async function prepareWorktree(cwd) {
       baselineTree,
       baselinePatchPath,
       reviewPatchPath,
+      retryOf: retrySession?.statePath ?? null,
     };
     await writeSession(session);
     return session;
@@ -481,7 +599,8 @@ export async function createReviewPatch(statePath) {
 
 /**
  * Apply the reviewed Qoder-only patch to the original source worktree without
- * staging it. A failed preflight leaves the source untouched.
+ * staging it, then dispose the temporary worktree. A failed preflight leaves
+ * both the source and the review session untouched.
  *
  * @param {string} statePath
  * @returns {Promise<WorktreeSession>}
@@ -505,6 +624,16 @@ export async function applyReviewPatch(statePath) {
   await runGit(session.sourceRoot, ["apply", "--binary", session.reviewPatchPath]);
   session.phase = "applied";
   await writeSession(session);
+  try {
+    await disposeRetryChain(session.retryOf, session.sourceRoot);
+    await disposeSession(session, false);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Unknown cleanup failure.";
+    throw new WorktreeError(
+      "cleanup_failed",
+      `The reviewed Qoder patch was applied, but the temporary worktree could not be removed: ${detail}`,
+    );
+  }
   return session;
 }
 
@@ -514,14 +643,7 @@ export async function applyReviewPatch(statePath) {
  */
 export async function disposeWorktree(statePath, discard) {
   const session = await readSession(statePath);
-  if (session.phase !== "applied" && !discard) {
-    throw new WorktreeError(
-      "confirmation_required",
-      "Pass --discard to remove a session whose reviewed changes were not applied.",
-    );
-  }
-  await runGit(session.sourceRoot, ["worktree", "remove", "--force", session.worktreeRoot]);
-  await rm(session.sessionRoot, { recursive: true, force: true });
+  await disposeSession(session, discard);
 }
 
 /**
@@ -530,13 +652,14 @@ export async function disposeWorktree(statePath, discard) {
 export async function main(argv) {
   const parsed = parseArgs(argv);
   if (parsed.command === "prepare") {
-    const session = await prepareWorktree(/** @type {string} */ (parsed.cwd));
+    const session = await prepareWorktree(/** @type {string} */ (parsed.cwd), parsed.retryOf);
     return {
       status: "succeeded",
       operation: "prepare",
       statePath: session.statePath,
       worktreeRoot: session.worktreeRoot,
       qoderCwd: session.worktreeCwd,
+      retryOf: session.retryOf,
     };
   }
   if (parsed.command === "inspect") {
@@ -566,7 +689,7 @@ export async function main(argv) {
   }
   if (parsed.command === "apply") {
     const session = await applyReviewPatch(/** @type {string} */ (parsed.state));
-    return { status: "succeeded", operation: "apply", statePath: session.statePath };
+    return { status: "succeeded", operation: "apply", statePath: session.statePath, cleaned: true };
   }
   await disposeWorktree(/** @type {string} */ (parsed.state), parsed.discard);
   return { status: "succeeded", operation: "dispose" };

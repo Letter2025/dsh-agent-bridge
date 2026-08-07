@@ -32,12 +32,27 @@ requirement, or Qoder `permission-mode auto`.
 For a code-changing task in a Git worktree, use the bundled coordinator before
 the Runner. It creates a temporary detached worktree, mirrors the source's
 tracked and non-ignored untracked files into it, and records that state as an
-index baseline. The source worktree remains untouched while Qoder works.
+index baseline. Ignored dependencies such as `node_modules` are not copied,
+linked, or installed. The source worktree remains untouched while Qoder works.
 
 ```sh
 node /path/to/qoder-agent/scripts/qoder_worktree.mjs prepare \
   --cwd /absolute/path/to/project
 ```
+
+When starting a fresh retry after a failed session, pass the failed session's
+state file explicitly:
+
+```sh
+node /path/to/qoder-agent/scripts/qoder_worktree.mjs prepare \
+  --cwd /absolute/path/to/project \
+  --retry-of /absolute/path/from-previous-session/session.json
+```
+
+The retry session must belong to the same source worktree. If the retry later
+applies successfully, the coordinator disposes the new session and all linked
+predecessor sessions. If the retry fails, the entire linked chain remains
+available for diagnosis.
 
 Read the JSON response and invoke the Runner with `qoderCwd`, not the source
 directory. After Qoder succeeds, generate and inspect the exact Qoder-only
@@ -52,7 +67,8 @@ Run relevant checks in the temporary worktree. Present the actual changed
 files, patch, and check results for review. Do not apply the patch or remove
 the temporary worktree until the user explicitly asks to apply the reviewed
 changes. Then use the coordinator's `apply` operation; it runs `git apply
---check` first and leaves the original index untouched. A conflict or any
+--check` first, leaves the original index untouched, and automatically removes
+the temporary worktree after a successful application. A conflict or any
 other failure is a stop condition, never a cue to force or retry.
 
 The coordinator requires a Git worktree with a `HEAD` commit and no unmerged
@@ -102,13 +118,18 @@ guesses a user-home installation path.
 4. Generate the coordinator's review patch, inspect that exact patch and the
    temporary-worktree test output independently, and present them to the user.
    Do not treat Qoder's self-reported summary as acceptance evidence.
-5. Wait for explicit approval before applying. On approval, run `apply`; if
-   its preflight detects a conflict, report it and leave the source untouched.
+5. Wait for explicit approval before applying. On approval, run `apply`; it
+   automatically disposes the temporary worktree after a successful patch
+   application. If its preflight detects a conflict, report it and leave the
+   source and temporary worktree untouched.
 6. If the result reports permission denial, authentication failure, timeout,
-   non-zero exit, output-limit termination, or another failure, stop and report
-   the envelope to the main Codex session. Do not retry automatically. Keep the
-   temporary worktree until the user explicitly asks to discard it. Apply only
-   the narrow model-queue recovery below.
+   non-zero exit, output-limit termination, cleanup failure, or another
+   failure, stop and report the envelope to the main Codex session. Do not
+   retry automatically. Keep the temporary worktree until the user explicitly
+   asks to discard it. If a new attempt is approved, create its worktree with
+   `--retry-of <statePath>` so a later successful apply can clean the linked
+   chain. For a patch that was applied but whose cleanup failed, retry
+   `dispose` directly. Apply only the narrow model-queue recovery below.
 7. After a successful run, issue at most two explicit correction tasks. Generate
    a new review session for every correction task; never loop without an
    explicit new task.

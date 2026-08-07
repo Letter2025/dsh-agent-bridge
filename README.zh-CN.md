@@ -55,6 +55,18 @@ Runner 始终使用 `permission-mode auto`、JSON 输出、禁用会话持久化
 [skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
 了解结果 envelope。
 
+## 隔离 worktree 生命周期
+
+涉及代码修改的任务会使用临时 detached Git worktree。协调器只镜像已跟踪和
+non-ignored 的源码状态；`node_modules` 等 ignored 依赖不会被复制、链接或安装。
+用户明确批准后，`apply` 会先检查并应用 Qoder 专属 patch，不会修改 source 的
+Git index，应用成功后会自动删除临时 worktree 和 session。应用失败时会保留
+session 供排查；如果 patch 已应用但清理失败，可重试
+`dispose --state <statePath>`。只有放弃未应用的 session 时才使用
+`dispose --state <statePath> --discard`。如果要基于失败 session 发起新的尝试，
+在 `prepare` 时传入 `--retry-of <previous-statePath>`。新尝试成功 apply 后会删除
+当前 session 及其关联的前置 session；新尝试失败时则保留整条链。
+
 ## 开发检查
 
 ```sh

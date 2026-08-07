@@ -10,6 +10,10 @@ not invoke Qoder; Qoder must still run only through `run_qoder.mjs`.
    `worktreeRoot`, and `qoderCwd` as one JSON object. The coordinator starts at
    `HEAD`, mirrors source tracked changes and non-ignored untracked files, then
    stages that copied state only in the temporary worktree as Qoder's baseline.
+   Ignored dependencies such as `node_modules` are not copied, linked, or
+   installed. When starting a new attempt after a failed session, add
+   `--retry-of <previous-statePath>`; the predecessor must belong to the same
+   source worktree.
 3. Run the Runner with `--cwd <qoderCwd>`. Qoder must not change the temporary
    Git index or worktree setup.
 4. If inspection is needed before review, run `qoder_worktree.mjs inspect
@@ -24,11 +28,16 @@ not invoke Qoder; Qoder must still run only through `run_qoder.mjs`.
    user approval.
 7. Only after approval, run `qoder_worktree.mjs apply --state <statePath>`.
    It runs `git apply --check --binary` against the source first, then applies
-   the patch without staging it. It never creates a commit or forces a patch.
-8. Keep the temporary worktree for follow-up review. After successful
-   application, dispose it with `dispose --state <statePath>`. To discard an
-   un-applied or failed session, require an explicit discard instruction and
-   run `dispose --state <statePath> --discard`.
+   the patch without staging it. After a successful application it automatically
+   removes the temporary worktree and session. It never creates a commit or
+   forces a patch.
+8. If application fails, keep the temporary worktree and any linked
+   predecessors for diagnosis. If a retry was created with `--retry-of`, a
+   successful apply disposes the new session and its linked predecessor chain.
+   If the patch was applied but automatic cleanup failed, retry the
+   coordinator's `dispose` command with the current `--state <statePath>`.
+   To discard an un-applied or failed chain, require an explicit discard
+   instruction and pass `--discard` to each retained session.
 
 Every coordinator command must receive narrowly scoped host execution. Do not
 grant reusable arbitrary shell or Node access.
@@ -50,7 +59,8 @@ Stop rather than bypassing a condition when:
 - the task needs ignored artifacts that the coordinator does not mirror;
 - the Runner reports a failure or Qoder changes the temporary Git index;
 - the review patch is empty but Qoder claims code changes;
-- source changes make `apply --check` fail.
+- source changes make `apply --check` fail;
+- the patch is applied but automatic worktree cleanup fails.
 
 The source may have unrelated staged or unstaged changes. The patch application
 checks only Qoder's affected content and preserves the source index. After

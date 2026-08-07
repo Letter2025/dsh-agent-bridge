@@ -62,6 +62,21 @@ collaboration workflow and
 [skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
 for the result envelope.
 
+## Isolated worktree lifecycle
+
+Code-changing tasks use a temporary detached Git worktree. The coordinator
+mirrors tracked and non-ignored source state only; ignored dependencies such
+as `node_modules` are not copied, linked, or installed. After explicit review
+approval, `apply` checks and applies the Qoder-only patch without staging the
+source, then automatically removes the temporary worktree and session. If
+application fails, the session is retained for diagnosis; if cleanup fails
+after application, retry `dispose --state <statePath>`. Use
+`dispose --state <statePath> --discard` only to discard an unapplied session.
+When starting a new attempt after a failed session, pass
+`--retry-of <previous-statePath>` to `prepare`. A successful apply then removes
+the new session and its linked predecessor sessions; a failed retry retains the
+whole chain.
+
 ## Development checks
 
 ```sh
