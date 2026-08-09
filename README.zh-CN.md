@@ -3,9 +3,59 @@
 [English](README.md)
 
 通过受边界约束的一次性 Codex Skill 将本机 Qoder 接入 Agent 工作流。
-第一阶段包含可复用的 `qoder-agent` Skill 和本地 Qoder CLI Runner，以及用于
-worker 式委派的兼容入口 `qoder-worker`；MCP、ACP、会话编排和会话续接不属于
-本阶段范围。
+当前阶段只聚焦于打磨可复用的 `qoder-agent` Skill、本地 Qoder CLI Runner，以及
+兼容 worker 式委派的 `qoder-worker` 入口。现阶段的目标是先稳定委派契约、安全
+边界、上下文模型并整理完整需求，再开发其他集成形态。
+
+## Feature 状态
+
+| Feature          | 状态                                            |
+| ---------------- | ----------------------------------------------- |
+| Codex Skill 集成 | 当前重点；已实现并持续打磨                      |
+| MCP 集成         | 规划中的 Feature；待 Skill 契约成熟后再考虑开发 |
+| ACP 集成         | 规划中的 Feature；当前阶段暂不安排实现          |
+| 完整会话编排     | 后续方向；不属于当前 one-shot Skill 阶段        |
+
+MCP 和 ACP 是产品规划方向，并非当前已经提供的能力。当前阶段会优先收集并验证
+Skill 的需求、使用约束和审阅语义，这些结论将作为后续 MCP 设计的输入。
+
+## 当前 Skill 支持的特性
+
+- 通过本地 Qoder CLI 进行 one-shot、非交互式委派；`qoder-worker` 提供兼容别名。
+- 由 Codex 从适用的项目说明、OpenSpec 产物、规格文件以及已安装 Codex Skill
+  中提炼规则，生成上下文完整的委派 brief；Qoder 无需安装或理解这些 Skill。
+- 渐进式 brief：简单任务只使用精简基础契约，仅在确有需要时加入项目上下文和
+  专业规则。
+- 三态 Brief Review（Spec）策略：支持显式 `required`、`off`，默认使用基于风险
+  判断的 `auto`；Spec 模式用于预览委派 brief，不等同于生成 OpenSpec。
+- 最窄工作目录和固定安全策略，禁止写出 `cwd`、处理凭证、发布内容以及执行
+  Git 历史相关操作。
+- 代码修改任务使用临时 detached worktree，可生成精确的 Qoder-only patch、独立
+  审阅、执行冲突预检，并在应用到源 worktree 前等待明确批准。
+- 使用 prompt 文件安全传递生成的或多行 brief，进行有界、文件身份校验的读取，
+  不把 brief 插值进 shell 命令。
+- 提供结构化结果 envelope、有界模型重试和输出、脱敏、超时、信号处理以及按平台
+  终止进程树。
+- 提供有边界的模型队列恢复和关联 retry session 清理，不依赖 Qoder 持久会话。
+
+## 注意事项
+
+- Codex 始终负责规划、上下文编译、审阅和最终验收；Qoder 是有边界的编码执行器，
+  不是一个可自主扩展任务的对等会话。
+- 代码修改的 worktree 隔离要求 Git 仓库已有 `HEAD` commit 且不存在 unmerged
+  path；`node_modules` 等 ignored 文件不会被镜像到临时 worktree。
+- `cwd` 必须保持为真实写入范围的最窄边界。位于边界外的上下文应由 Codex 提炼进
+  brief，不能为了让 Qoder 读取而扩大其可写范围。
+- brief 审批只授权执行一次 Qoder 任务；把审阅后的 patch 应用到源 worktree 始终
+  需要另一次明确批准。
+- 本机必须已具备 Qoder 登录状态以及任务所需的 host/network 条件。遇到权限拒绝、
+  认证失败、超时、输出异常或非零退出时应停止，不能扩大权限后重试。
+- 不要在委派 brief 中加入凭证或秘密。生成的 brief 必须通过非 shell 文件写入工具
+  创建，并使用 `--prompt-file` 传递。
+- prompt 内容上限为 64 KiB；Windows 还可能因完整 `CreateProcessW` 命令行限制而
+  具有更低的实际容量，Runner 会在启动 Qoder 前预检并返回 `invalid_input`。
+- `qoder-worker` 依赖同目录安装的 `qoder-agent`；两个入口共用同一 Runner 和安全
+  策略。
 
 ## 环境要求
 

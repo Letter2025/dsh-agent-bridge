@@ -3,10 +3,71 @@
 [简体中文](README.zh-CN.md)
 
 Bridge Qoder into an agent workflow through bounded, one-shot Codex Skills.
-The first milestone contains the reusable `qoder-agent` Skill and local Qoder
-CLI Runner, plus `qoder-worker` as a compatibility entry point for worker-style
-delegation. MCP, ACP, session orchestration, and continuation are out of scope
-for this milestone.
+The current milestone focuses exclusively on refining the reusable
+`qoder-agent` Skill, its local Qoder CLI Runner, and `qoder-worker` compatibility
+entry point. The goal is to stabilize the delegation contract, safety boundary,
+context model, and product requirements before building another integration
+surface.
+
+## Feature status
+
+| Feature                    | Status                                                                    |
+| -------------------------- | ------------------------------------------------------------------------- |
+| Codex Skill integration    | Current focus; implemented and actively being refined                     |
+| MCP integration            | Planned feature; development begins only after the Skill contract matures |
+| ACP integration            | Planned feature; no implementation work is scheduled in the current phase |
+| Rich session orchestration | Future consideration; not part of the current one-shot Skill milestone    |
+
+MCP and ACP are product directions, not current capabilities. This phase will
+first collect and validate Skill requirements, usage constraints, and review
+semantics; those findings will shape any later MCP design.
+
+## Current Skill features
+
+- One-shot, non-interactive delegation through the local Qoder CLI, with
+  `qoder-worker` available as a compatibility alias.
+- Context-aware delegation briefs compiled by Codex from applicable project
+  instructions, OpenSpec artifacts, specifications, and portable guidance from
+  installed Codex Skills. Qoder does not need those Skills installed.
+- Progressive brief construction: simple tasks use a short base contract;
+  project context and specialized rules are added only when relevant.
+- Three-state Brief Review (Spec) policy: explicit `required` and `off` modes,
+  plus risk-based `auto` mode by default. Spec mode previews the delegation
+  brief; it is not OpenSpec generation.
+- Narrow working-directory and fixed safety boundaries that prohibit writes
+  outside `cwd`, credential handling, publication, and Git-history operations.
+- Temporary detached worktrees for code-changing tasks, exact Qoder-only patch
+  generation, independent review, conflict preflight, and explicit approval
+  before applying changes to the source worktree.
+- Safe prompt-file transport with bounded, identity-checked reads and no shell
+  interpolation of generated or multiline briefs.
+- Structured result envelopes, bounded retries and output capture, redaction,
+  timeouts, signal handling, and platform-specific process-tree termination.
+- Bounded model-queue recovery and linked retry-session cleanup without relying
+  on persistent Qoder sessions.
+
+## Important notes
+
+- Codex remains the planner, context compiler, reviewer, and acceptance owner;
+  Qoder is a bounded coding executor, not an autonomous peer session.
+- Code-changing worktree isolation requires a Git repository with a `HEAD`
+  commit and no unmerged paths. Ignored files such as `node_modules` are not
+  mirrored into the temporary worktree.
+- Keep `cwd` at the narrowest real write boundary. Context outside it must be
+  summarized into the brief rather than exposed by widening Qoder's writable
+  scope.
+- Brief approval authorizes one Qoder execution only. Applying the reviewed
+  patch to the source worktree always requires separate explicit approval.
+- Qoder authentication and any required host/network access must already be
+  available locally. Stop on denial, authentication failure, timeout, malformed
+  output, or non-zero exit; never retry with broader permissions.
+- Never place credentials or secrets in a delegation brief. Write generated
+  briefs with a non-shell file-writing tool and pass them with `--prompt-file`.
+- The prompt content limit is 64 KiB, but Windows can have a lower effective
+  capacity because the complete `CreateProcessW` command line is limited. The
+  Runner preflights this and returns `invalid_input` before spawning Qoder.
+- `qoder-worker` requires the co-installed `qoder-agent`; both entry points use
+  the same Runner and safety policy.
 
 ## Requirements
 
