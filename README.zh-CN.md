@@ -35,13 +35,16 @@ cp -R skill/qoder-worker /path/to/project/.codex/skills/qoder-worker
 
 ## 运行 Runner
 
-命令必须提供绝对项目目录和有边界的任务提示词：
+命令必须提供能覆盖预期改动的最窄绝对目录，以及有边界的任务 brief。请使用
+非 shell 的编辑器或文件写入工具，把生成的或多行 brief 写入私有文件：
 
 ```sh
 node skill/qoder-agent/scripts/run_qoder.mjs \
-  --cwd /absolute/path/to/project \
-  --prompt "实现指定改动并运行相关测试，不要提交或推送。"
+  --cwd /absolute/path/to/task-scope \
+  --prompt-file /absolute/path/to/delegation-brief.md
 ```
+
+内联 `--prompt` 仅为兼容保留；不得把生成的 brief 插值进 shell 命令。
 
 可选参数为 `--qodercli-path`、`--model`、`--timeout-ms` 和
 `--max-model-request-retries`，对应环境变量为 `QODERCLI_PATH`、
@@ -51,7 +54,9 @@ Runner 始终使用 `permission-mode auto`、JSON 输出、禁用会话持久化
 
 可通过 `$qoder-agent` 或 `$qoder-worker` 调用，两者使用同一个 Runner。请阅读
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) 了解 Codex 协作
-流程，并阅读
+流程，阅读
+[skill/qoder-agent/references/delegation-prompt.md](skill/qoder-agent/references/delegation-prompt.md)
+了解由 Codex 编译上下文的 `Qoder Delegation Brief v1`，并阅读
 [skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
 了解结果 envelope。
 
@@ -89,7 +94,9 @@ TypeScript 源码统一使用 bundler 风格的无扩展名导入。`pnpm build`
 ## 可选真实验收
 
 默认检查使用 fake child-process boundary，不会调用 Qoder 模型。如需显式执行端到端
-验收，请在项目仓库之外创建临时仓库并手动创建 baseline commit：
+验收，请在项目仓库之外创建临时仓库并手动创建 baseline commit。运行以下命令前，
+请使用可信编辑器或非 shell 文件写入工具，在 fixture 外创建私有文件
+`/absolute/path/to/qoder-verification-brief.md`，并写入有边界的验收任务：
 
 ```sh
 fixture="$(mktemp -d /tmp/qoder-agent-fixture.XXXXXX)"
@@ -103,7 +110,7 @@ git -C "$fixture" commit -m baseline
 qodercli --version
 node skill/qoder-agent/scripts/run_qoder.mjs \
   --cwd "$fixture" \
-  --prompt "将 example.txt 增加一行，运行相关检查，不要 commit、push、publish、reset 或 clean。"
+  --prompt-file /absolute/path/to/qoder-verification-brief.md
 
 git -C "$fixture" status --short
 git -C "$fixture" diff

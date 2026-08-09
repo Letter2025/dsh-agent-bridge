@@ -1,4 +1,9 @@
-export { PROMPT_LIMIT_BYTES, PROTOCOL_VERSION, RUNNER_VERSION } from "./constants";
+export {
+  PROMPT_LIMIT_BYTES,
+  PROTOCOL_VERSION,
+  RUNNER_VERSION,
+  WINDOWS_COMMAND_LINE_LIMIT_UTF16,
+} from "./constants";
 export { createPreflightFailure } from "./protocol";
 export { executeRunner, runQoder } from "./run-qoder";
 export {

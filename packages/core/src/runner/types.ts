@@ -25,15 +25,37 @@ type SpawnTreeKillerLike = (
 ) => TreeKillerLike;
 type KillLike = (pid: number, signal: NodeJS.Signals) => void;
 
+export interface PromptFileStats {
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  isFile(): boolean;
+  isSymbolicLink(): boolean;
+}
+
+export interface PromptFileHandle {
+  stat(): Promise<PromptFileStats>;
+  read(
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ): Promise<{ bytesRead: number }>;
+  close(): Promise<void>;
+}
+
 export interface RunnerFs {
   access(path: string, mode?: number): Promise<void>;
+  lstat(path: string): Promise<PromptFileStats>;
+  open(path: string, flags: number): Promise<PromptFileHandle>;
   realpath(path: string): Promise<string>;
   stat(path: string): Promise<{ isDirectory(): boolean; isFile(): boolean }>;
 }
 
 export interface ParsedRunnerArgs {
   cwd: string;
-  prompt: string;
+  prompt: string | undefined;
+  promptFile: string | undefined;
   qodercliPath: string | undefined;
   model: string | undefined;
   timeoutMs: string | undefined;

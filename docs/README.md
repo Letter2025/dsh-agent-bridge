@@ -8,8 +8,12 @@ native Codex subagent.
 
 ## Operating contract
 
-- Use `node skill/qoder-agent/scripts/run_qoder.mjs --cwd <absolute-path> --prompt <text>`.
+- Use `node skill/qoder-agent/scripts/run_qoder.mjs --cwd <narrow-absolute-path> --prompt-file <absolute-brief-path>`.
 - Keep `cwd` outside the Runner's implicit state; no current-directory fallback exists.
+- Keep `cwd` at the narrowest real write boundary. Compile relevant context into
+  the brief instead of widening the writable directory merely so Qoder can read it.
+- Write generated or multiline briefs with a non-shell file-writing tool. Never
+  interpolate them into a shell command; inline `--prompt` is compatibility-only.
 - Make `qodercli` available on `PATH` for the Codex process, or configure an
   absolute `QODERCLI_PATH`; the Runner never probes a user-specific home path.
 - Keep prompts free of tokens, passwords, API keys, and other credentials.
@@ -18,7 +22,7 @@ native Codex subagent.
 - Stop on permission denial, authentication failure, timeout, non-zero exit, or
   malformed/unsupported Qoder behavior. Do not retry with broader permissions.
 - Never ask Qoder to commit, push, publish, reset, clean, or edit outside the
-  explicit project directory.
+  explicit task directory.
 
 ## Installation
 
@@ -29,8 +33,9 @@ Copy both Skill directories to either:
 - `~/.codex/skills/qoder-agent/` or the configured Codex skills directory for
   personal use, alongside `qoder-worker/`.
 
-`qoder-agent` contains `SKILL.md`, `agents/openai.yaml`, the protocol
-reference, and self-contained generated executables under `scripts/`.
+`qoder-agent` contains `SKILL.md`, `agents/openai.yaml`, the Runner and
+delegation-prompt protocol references, and self-contained generated executables
+under `scripts/`.
 Their TypeScript sources live in `packages/core` and `packages/cli`; regenerate
 them with `pnpm build` instead of editing the `.mjs` files. `qoder-worker`
 contains the alias metadata and instructions, and requires the co-installed

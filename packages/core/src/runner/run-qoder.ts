@@ -6,7 +6,7 @@ import {
   HARD_OUTPUT_LIMIT_BYTES,
   TERMINATION_GRACE_MS,
 } from "./constants";
-import { buildQoderArgs, resolveConfig } from "./config";
+import { buildQoderArgs, resolveConfig, validateWindowsCommandLine } from "./config";
 import { OutputCollector, isModelQueueExhausted, redactSecrets } from "./output";
 import { createEnvelope, createPreflightFailure } from "./protocol";
 import {
@@ -24,7 +24,7 @@ import {
  * @param {RunnerDependencies} dependencies
  * @returns {Promise<RunnerExecution>}
  */
-export function runQoder(
+export async function runQoder(
   config: RunnerConfig,
   dependencies: RunnerDependencies = {},
 ): Promise<RunnerExecution> {
@@ -44,6 +44,9 @@ export function runQoder(
   const stdout = new OutputCollector(captureLimitBytes, hardOutputLimitBytes);
   const stderr = new OutputCollector(captureLimitBytes, hardOutputLimitBytes);
   const args = buildQoderArgs(config);
+  if (platform === "win32") {
+    validateWindowsCommandLine(config.executable, args);
+  }
 
   return new Promise((resolvePromise) => {
     let child: ChildProcessLike | undefined;

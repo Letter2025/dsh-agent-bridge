@@ -1,6 +1,6 @@
 ---
 name: qoder-worker
-description: Compatibility entry point for delegating bounded coding tasks to a locally installed Qoder CLI through the co-installed qoder-agent Runner. Use when Codex should invoke Qoder as an external coding worker while retaining responsibility for isolated worktrees, exact diff review, safe application, and acceptance.
+description: Compatibility entry point for delegating bounded coding tasks to a locally installed Qoder CLI through the co-installed qoder-agent Runner. Use when Codex should invoke Qoder as an external coding worker, compile relevant project context and installed Skill rules into a self-contained task brief, and retain responsibility for isolated worktrees, exact diff review, safe application, and acceptance.
 ---
 
 # Qoder Worker
@@ -36,18 +36,28 @@ change the Runner's fixed safety policy, absolute `cwd` requirement, or Qoder
 
 ## Invoke the Worker
 
-Run the co-installed Runner with an absolute project directory and a bounded
-task:
+Before invoking Qoder, read the co-installed `qoder-agent/SKILL.md` and follow
+its base brief, progressive context extension, narrow `cwd`, and three-state
+Brief Review (Spec) policy. Read `references/delegation-prompt.md` only when its
+context-extension triggers apply. Do not tell Qoder to invoke Codex Skills or
+assume they are installed in Qoder.
+
+Run the co-installed Runner with the narrowest absolute task directory that
+contains the expected changes and the compiled brief:
 
 ```sh
 node /path/to/qoder-agent/scripts/run_qoder.mjs \
-  --cwd /absolute/path/to/project \
-  --prompt "Implement the bounded task and run the relevant tests. Do not commit or push."
+  --cwd /absolute/path/to/task-scope \
+  --prompt-file /absolute/path/to/delegation-brief.md
 ```
 
 In Codex, submit this command with `sandbox_permissions:
 "require_escalated"`. Never use an escalation to add Qoder permission
 overrides, tool filters, or system-prompt overrides.
+
+Create the brief file with a non-shell file-writing tool. Never interpolate
+the brief into the command or use shell redirection, command substitution, or
+a heredoc to write it. The inline `--prompt` option is compatibility-only.
 
 Follow the isolated worktree workflow in the co-installed
 `qoder-agent/SKILL.md`. Run Qoder in the coordinator's returned `qoderCwd`,

@@ -1,6 +1,8 @@
 # Runner example
 
-Use this example only with a disposable directory outside the project:
+Use this example only with a disposable directory outside the project. First,
+use a trusted editor or non-shell file-writing tool to create the private brief
+`/absolute/path/to/qoder-verification-brief.md` outside the fixture:
 
 ```sh
 fixture="$(mktemp -d /tmp/qoder-agent-fixture.XXXXXX)"
@@ -13,7 +15,7 @@ git -C "$fixture" commit -m baseline
 
 node skill/qoder-agent/scripts/run_qoder.mjs \
   --cwd "$fixture" \
-  --prompt "Add one line to example.txt, run a relevant check, and do not modify Git history."
+  --prompt-file /absolute/path/to/qoder-verification-brief.md
 
 git -C "$fixture" status --short
 git -C "$fixture" diff

@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { access, realpath, stat } from "node:fs/promises";
+import { access, lstat, open, realpath, stat } from "node:fs/promises";
 import { delimiter, extname, isAbsolute, join } from "node:path";
 import {
   DEFAULT_MAX_MODEL_REQUEST_RETRIES,
@@ -7,10 +7,173 @@ import {
   FIXED_SAFETY_POLICY,
   MAX_MODEL_REQUEST_RETRIES,
   MAX_TIMEOUT_MS,
+  PROMPT_LIMIT_BYTES,
+  WINDOWS_COMMAND_LINE_LIMIT_UTF16,
 } from "./constants";
-import { RunnerError, type ParsedRunnerArgs, type RunnerConfig, type RunnerFs } from "./types";
+import {
+  RunnerError,
+  type ParsedRunnerArgs,
+  type PromptFileHandle,
+  type PromptFileStats,
+  type RunnerConfig,
+  type RunnerFs,
+} from "./types";
 
-const DEFAULT_FS = { access, realpath, stat };
+const DEFAULT_FS: RunnerFs = {
+  access,
+  lstat: (path) => lstat(path, { bigint: true }) as Promise<PromptFileStats>,
+  open: async (path, flags) => {
+    const handle = await open(path, flags);
+    return {
+      stat: () => handle.stat({ bigint: true }) as Promise<PromptFileStats>,
+      read: (buffer, offset, length, position) => handle.read(buffer, offset, length, position),
+      close: () => handle.close(),
+    };
+  },
+  realpath,
+  stat,
+};
+
+function validatePrompt(prompt: string): string {
+  if (prompt.trim() === "") {
+    throw new RunnerError("invalid_input", "The prompt must be non-empty.");
+  }
+  if (prompt.includes("\0")) {
+    throw new RunnerError("invalid_input", "The prompt must not contain NUL bytes.");
+  }
+  if (Buffer.byteLength(prompt, "utf8") > PROMPT_LIMIT_BYTES) {
+    throw new RunnerError("invalid_input", "The prompt exceeds the 64 KiB limit.");
+  }
+  return prompt;
+}
+
+export async function resolvePrompt(
+  parsed: Pick<ParsedRunnerArgs, "prompt" | "promptFile">,
+  fsApi: RunnerFs = DEFAULT_FS,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string> {
+  if ((parsed.prompt === undefined) === (parsed.promptFile === undefined)) {
+    throw new RunnerError("invalid_input", "Exactly one of --prompt or --prompt-file is required.");
+  }
+  if (parsed.prompt !== undefined) {
+    return validatePrompt(parsed.prompt);
+  }
+  const promptFile = parsed.promptFile;
+  if (promptFile === undefined || !isAbsolute(promptFile)) {
+    throw new RunnerError("invalid_input", "--prompt-file must be an absolute path.");
+  }
+
+  let pathInformation: PromptFileStats;
+  try {
+    pathInformation = await fsApi.lstat(promptFile);
+  } catch {
+    throw new RunnerError("invalid_input", "--prompt-file must point to a readable regular file.");
+  }
+  if (!pathInformation.isFile() || pathInformation.isSymbolicLink()) {
+    throw new RunnerError(
+      "invalid_input",
+      "--prompt-file must point to a non-symbolic-link regular file.",
+    );
+  }
+
+  let handle: PromptFileHandle | undefined;
+  let resolvedPrompt: string | undefined;
+  let operationError: RunnerError | undefined;
+  try {
+    const noFollow = platform === "win32" ? 0 : fsConstants.O_NOFOLLOW;
+    handle = await fsApi.open(promptFile, fsConstants.O_RDONLY | noFollow);
+    const handleInformation = await handle.stat();
+    if (
+      !handleInformation.isFile() ||
+      handleInformation.dev !== pathInformation.dev ||
+      handleInformation.ino !== pathInformation.ino
+    ) {
+      throw new RunnerError(
+        "invalid_input",
+        "--prompt-file changed identity while it was being opened.",
+      );
+    }
+    if (handleInformation.size > BigInt(PROMPT_LIMIT_BYTES)) {
+      throw new RunnerError("invalid_input", "The prompt exceeds the 64 KiB limit.");
+    }
+
+    const buffer = Buffer.allocUnsafe(PROMPT_LIMIT_BYTES + 1);
+    let totalBytesRead = 0;
+    while (totalBytesRead < buffer.length) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        totalBytesRead,
+        buffer.length - totalBytesRead,
+        totalBytesRead,
+      );
+      if (bytesRead === 0) break;
+      totalBytesRead += bytesRead;
+    }
+    if (totalBytesRead > PROMPT_LIMIT_BYTES) {
+      throw new RunnerError("invalid_input", "The prompt exceeds the 64 KiB limit.");
+    }
+
+    let prompt: string;
+    try {
+      prompt = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, totalBytesRead));
+    } catch {
+      throw new RunnerError("invalid_input", "--prompt-file must contain valid UTF-8 text.");
+    }
+    resolvedPrompt = validatePrompt(prompt);
+  } catch (error) {
+    operationError =
+      error instanceof RunnerError
+        ? error
+        : new RunnerError("invalid_input", "--prompt-file must point to a readable regular file.");
+  }
+
+  if (handle !== undefined) {
+    try {
+      await handle.close();
+    } catch {
+      operationError ??= new RunnerError("internal_error", "The prompt file could not be closed.");
+    }
+  }
+
+  if (operationError !== undefined) throw operationError;
+  if (resolvedPrompt === undefined) {
+    throw new RunnerError("internal_error", "The prompt file did not produce a prompt.");
+  }
+  return resolvedPrompt;
+}
+
+function quoteWindowsArgument(argument: string): string {
+  if (argument.length > 0 && !/[ \t"]/u.test(argument)) return argument;
+
+  let quoted = '"';
+  let backslashes = 0;
+  for (let index = 0; index < argument.length; index += 1) {
+    const character = argument[index];
+    if (character === "\\") {
+      backslashes += 1;
+    } else if (character === '"') {
+      quoted += "\\".repeat(backslashes * 2 + 1) + '"';
+      backslashes = 0;
+    } else {
+      quoted += "\\".repeat(backslashes) + character;
+      backslashes = 0;
+    }
+  }
+  return quoted + "\\".repeat(backslashes * 2) + '"';
+}
+
+export function windowsCommandLineLength(executable: string, args: string[]): number {
+  return [executable, ...args].map(quoteWindowsArgument).join(" ").length + 1;
+}
+
+export function validateWindowsCommandLine(executable: string, args: string[]): void {
+  if (windowsCommandLineLength(executable, args) > WINDOWS_COMMAND_LINE_LIMIT_UTF16) {
+    throw new RunnerError(
+      "invalid_input",
+      "The Qoder command line exceeds the Windows CreateProcessW limit; shorten the brief, path, or model.",
+    );
+  }
+}
 
 export function parseTimeout(rawValue: string | undefined, source = "timeout"): number {
   if (rawValue === undefined || rawValue.trim() === "" || !/^\d+$/.test(rawValue)) {
@@ -129,12 +292,13 @@ export async function resolveConfig(
   fsApi: RunnerFs = DEFAULT_FS,
 ): Promise<RunnerConfig> {
   const cwd = await normalizeCwd(parsed.cwd, fsApi);
+  const prompt = await resolvePrompt(parsed, fsApi);
   const executable = await resolveExecutable(parsed.qodercliPath, env, fsApi);
   const configuredTimeout = parsed.timeoutMs ?? env.QODER_TIMEOUT_MS;
   const configuredRetries = parsed.maxModelRequestRetries ?? env.QODER_MAX_MODEL_REQUEST_RETRIES;
   return {
     cwd,
-    prompt: parsed.prompt,
+    prompt,
     executable,
     env,
     model: (parsed.model ?? env.QODER_MODEL)?.trim() || undefined,

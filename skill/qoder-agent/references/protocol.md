@@ -8,16 +8,36 @@ parsing, or `stream-json` handling.
 ## Public command
 
 ```text
-run_qoder.mjs --cwd <absolute-path> --prompt <text>
-run_qoder.mjs --cwd <absolute-path> --prompt <text> \
+run_qoder.mjs --cwd <absolute-path> --prompt-file <absolute-brief-path>
+run_qoder.mjs --cwd <absolute-path> \
+  (--prompt-file <absolute-brief-path> | --prompt <text>) \
   [--qodercli-path <absolute-path>] [--model <model>] [--timeout-ms <milliseconds>] \
   [--max-model-request-retries <count>]
 ```
 
-`--cwd` and `--prompt` are mandatory. `cwd` must be an existing absolute
-directory and is normalized with `realpath`. The prompt must be non-empty and
-no larger than 64 KiB in UTF-8 bytes. The Runner does not read a prompt from
-stdin and does not fall back to the Runner's current directory.
+`--cwd` and exactly one of `--prompt-file` or `--prompt` are mandatory. `cwd`
+must be an existing absolute directory and is normalized with `realpath`. It
+should be the narrowest actual write boundary for the task, not a broader
+directory chosen merely to expose read-only context.
+
+`--prompt-file` is the default interface for generated or multiline briefs.
+Its path must be absolute and identify a readable, non-symbolic-link regular
+file containing valid UTF-8 text. The loaded prompt must be non-empty and no
+larger than 64 KiB in UTF-8 bytes. The Runner opens one file handle, verifies
+the handle still identifies the regular file selected by the path, checks its
+size before reading, and reads at most 64 KiB plus one detection byte. It
+closes the handle before spawning Qoder and passes only the loaded contents to
+Qoder; the file path is not included in Qoder's arguments. The inline
+`--prompt` interface remains compatibility-only and has the same content
+limits. The Runner does not read a prompt from stdin and does not fall back to
+the Runner's current directory.
+
+On Windows, the effective prompt capacity can be lower because Qoder still
+receives the prompt as an argument. Before spawning, the Runner measures the
+complete escaped command line—including the executable, fixed arguments,
+paths, model, safety policy, and prompt—as UTF-16 code units. It returns
+`invalid_input` when the value plus its terminating NUL would exceed the
+32,767-unit `CreateProcessW` limit.
 
 ## Qoder invocation
 
@@ -83,7 +103,7 @@ object on stdout:
 ```json
 {
   "protocolVersion": 1,
-  "runnerVersion": "0.1.0",
+  "runnerVersion": "0.3.0",
   "status": "succeeded",
   "cwd": "/absolute/project",
   "executable": "/absolute/path/to/qodercli",

@@ -1,9 +1,17 @@
 import { EventEmitter } from "node:events";
 import { spawnSync, type SpawnOptions } from "node:child_process";
+import { createHash } from "node:crypto";
+import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PROMPT_LIMIT_BYTES, runQoder } from "@qoder-agent-bridge/core";
+import {
+  PROMPT_LIMIT_BYTES,
+  WINDOWS_COMMAND_LINE_LIMIT_UTF16,
+  runQoder,
+} from "@qoder-agent-bridge/core";
 import { parseRunnerArgs } from "../packages/cli/src/run-qoder";
 import {
   DEFAULT_MAX_MODEL_REQUEST_RETRIES,
@@ -18,6 +26,9 @@ import {
   parseTimeout,
   resolveConfig,
   resolveExecutable,
+  resolvePrompt,
+  validateWindowsCommandLine,
+  windowsCommandLineLength,
 } from "../packages/core/src/runner/config";
 import { redactSecrets } from "../packages/core/src/runner/output";
 
@@ -45,8 +56,19 @@ function fakeConfig(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function fakeFs(cwd = "/tmp/qoder-fixture", executablePaths: string[] = ["/tmp/qodercli"]) {
+function fakeFs(
+  cwd = "/tmp/qoder-fixture",
+  executablePaths: string[] = ["/tmp/qodercli"],
+  promptFiles: Record<string, string | Buffer> = {},
+) {
   const executableSet = new Set(executablePaths);
+  const promptIdentity = { dev: 1n, ino: 2n };
+  const promptStats = (value: string | Buffer) => ({
+    ...promptIdentity,
+    size: BigInt(Buffer.byteLength(value)),
+    isFile: () => true,
+    isSymbolicLink: () => false,
+  });
   return {
     stat: async (candidate: string) => {
       if (candidate === cwd) {
@@ -58,6 +80,29 @@ function fakeFs(cwd = "/tmp/qoder-fixture", executablePaths: string[] = ["/tmp/q
       throw new Error("missing");
     },
     access: async () => undefined,
+    lstat: async (candidate: string) => {
+      const value = promptFiles[candidate];
+      if (value !== undefined) return promptStats(value);
+      throw new Error("missing");
+    },
+    open: async (candidate: string) => {
+      const value = promptFiles[candidate];
+      if (value === undefined) throw new Error("missing");
+      const contents = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      return {
+        stat: async () => promptStats(contents),
+        read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+          const bytesRead = contents.copy(
+            buffer,
+            offset,
+            position,
+            Math.min(position + length, contents.length),
+          );
+          return { bytesRead };
+        },
+        close: async () => undefined,
+      };
+    },
     realpath: async (candidate: string) => (candidate === cwd ? "/real/qoder-fixture" : candidate),
   };
 }
@@ -91,6 +136,20 @@ describe("Runner input and command construction", () => {
     expect(() => parseRunnerArgs(["--cwd", "/tmp", "--prompt", "task", "--unknown"])).toThrow(
       /Unsupported/,
     );
+    expect(
+      parseRunnerArgs(["--cwd", "/tmp", "--prompt-file", "/tmp/delegation-brief.md"]),
+    ).toMatchObject({ prompt: undefined, promptFile: "/tmp/delegation-brief.md" });
+    expect(() => parseRunnerArgs(["--cwd", "/tmp"])).toThrow(/Exactly one/);
+    expect(() =>
+      parseRunnerArgs([
+        "--cwd",
+        "/tmp",
+        "--prompt",
+        "task",
+        "--prompt-file",
+        "/tmp/delegation-brief.md",
+      ]),
+    ).toThrow(/Exactly one/);
   });
 
   it("constructs a fixed safe Qoder argument array", () => {
@@ -123,6 +182,17 @@ describe("Runner input and command construction", () => {
     expect(args).not.toContain("--tools");
   });
 
+  it("measures and enforces the Windows UTF-16 command-line boundary", () => {
+    expect(windowsCommandLineLength("qodercli.exe", [])).toBe("qodercli.exe".length + 1);
+    expect(windowsCommandLineLength("q.exe", ["a b"])).toBe('q.exe "a b"'.length + 1);
+    expect(windowsCommandLineLength("q.exe", ["😀"])).toBe("q.exe 😀".length + 1);
+    expect(windowsCommandLineLength("q.exe", ['a"b\\'])).toBeGreaterThan('q.exe a"b\\'.length + 1);
+
+    expect(() =>
+      validateWindowsCommandLine("qodercli.exe", ["a".repeat(WINDOWS_COMMAND_LINE_LIMIT_UTF16)]),
+    ).toThrow(/CreateProcessW/);
+  });
+
   it("applies timeout defaults and bounds", () => {
     expect(parseTimeout(String(DEFAULT_TIMEOUT_MS))).toBe(DEFAULT_TIMEOUT_MS);
     expect(() => parseTimeout("0")).toThrow(/between/);
@@ -139,6 +209,154 @@ describe("Runner input and command construction", () => {
 });
 
 describe("Runner preflight and resolution", () => {
+  it("reads a bounded UTF-8 prompt from an absolute regular file", async () => {
+    const promptFile = "/tmp/delegation-brief.md";
+    const prompt = 'Use literal `backticks`, $(commands), and "quotes".';
+    await expect(
+      resolvePrompt(
+        { prompt: undefined, promptFile },
+        fakeFs("/tmp/qoder-fixture", ["/tmp/qodercli"], { [promptFile]: prompt }),
+      ),
+    ).resolves.toBe(prompt);
+
+    await expect(
+      resolvePrompt({ prompt: undefined, promptFile: "relative.md" }, fakeFs()),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(
+      resolvePrompt(
+        { prompt: undefined, promptFile },
+        {
+          ...fakeFs(),
+          lstat: async () => ({
+            dev: 1n,
+            ino: 2n,
+            size: 1n,
+            isFile: () => false,
+            isSymbolicLink: () => true,
+          }),
+        },
+      ),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(
+      resolvePrompt(
+        { prompt: undefined, promptFile },
+        fakeFs("/tmp/qoder-fixture", ["/tmp/qodercli"], {
+          [promptFile]: Buffer.alloc(PROMPT_LIMIT_BYTES + 1),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(resolvePrompt({ prompt: "inline", promptFile }, fakeFs())).rejects.toThrow(
+      /Exactly one/,
+    );
+    await expect(
+      resolvePrompt({ prompt: undefined, promptFile: undefined }, fakeFs()),
+    ).rejects.toThrow(/Exactly one/);
+  });
+
+  it("rejects oversized prompt files before reading and always closes the handle", async () => {
+    const baseFs = fakeFs();
+    let readCalled = false;
+    let closed = false;
+    const promptFile = "/tmp/oversized-brief.md";
+    const oversizedStats = {
+      dev: 1n,
+      ino: 2n,
+      size: 10_000_000_000n,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+    };
+
+    await expect(
+      resolvePrompt(
+        { prompt: undefined, promptFile },
+        {
+          ...baseFs,
+          lstat: async () => oversizedStats,
+          open: async () => ({
+            stat: async () => oversizedStats,
+            read: async () => {
+              readCalled = true;
+              return { bytesRead: 0 };
+            },
+            close: async () => {
+              closed = true;
+            },
+          }),
+        },
+      ),
+    ).rejects.toThrow(/64 KiB/);
+
+    expect(readCalled).toBe(false);
+    expect(closed).toBe(true);
+  });
+
+  it("rejects replacement and growth using one bounded open handle", async () => {
+    const baseFs = fakeFs();
+    const promptFile = "/tmp/changing-brief.md";
+    const pathStats = {
+      dev: 1n,
+      ino: 2n,
+      size: 1n,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+    };
+    let replacementRead = false;
+    let replacementClosed = false;
+    await expect(
+      resolvePrompt(
+        { prompt: undefined, promptFile },
+        {
+          ...baseFs,
+          lstat: async () => pathStats,
+          open: async () => ({
+            stat: async () => ({ ...pathStats, ino: 3n }),
+            read: async () => {
+              replacementRead = true;
+              return { bytesRead: 0 };
+            },
+            close: async () => {
+              replacementClosed = true;
+            },
+          }),
+        },
+      ),
+    ).rejects.toThrow(/changed identity/);
+    expect(replacementRead).toBe(false);
+    expect(replacementClosed).toBe(true);
+
+    const growingContents = Buffer.alloc(PROMPT_LIMIT_BYTES + 1, "a");
+    let maximumRequestedRead = 0;
+    let growthClosed = false;
+    await expect(
+      resolvePrompt(
+        { prompt: undefined, promptFile },
+        {
+          ...baseFs,
+          lstat: async () => pathStats,
+          open: async () => ({
+            stat: async () => pathStats,
+            read: async (buffer, offset, length, position) => {
+              maximumRequestedRead = Math.max(maximumRequestedRead, length);
+              return {
+                bytesRead: growingContents.copy(
+                  buffer,
+                  offset,
+                  position,
+                  Math.min(position + length, growingContents.length),
+                ),
+              };
+            },
+            close: async () => {
+              growthClosed = true;
+            },
+          }),
+        },
+      ),
+    ).rejects.toThrow(/64 KiB/);
+    expect(maximumRequestedRead).toBeLessThanOrEqual(PROMPT_LIMIT_BYTES + 1);
+    expect(growthClosed).toBe(true);
+  });
+
   it("normalizes an existing directory and rejects relative or file paths", async () => {
     const fsApi = fakeFs();
     await expect(normalizeCwd("/tmp/qoder-fixture", fsApi)).resolves.toBe("/real/qoder-fixture");
@@ -157,6 +375,7 @@ describe("Runner preflight and resolution", () => {
       {
         cwd: "/tmp/qoder-fixture",
         prompt: "task",
+        promptFile: undefined,
         qodercliPath: "/tmp/cli-qoder",
         model: "cli-model",
         timeoutMs: "123",
@@ -187,6 +406,7 @@ describe("Runner preflight and resolution", () => {
       {
         cwd: "/tmp/qoder-fixture",
         prompt: "task",
+        promptFile: undefined,
         qodercliPath: undefined,
         model: undefined,
         timeoutMs: undefined,
@@ -308,6 +528,20 @@ describe("Runner process boundary and envelope", () => {
     await resultPromise;
 
     expect(calls[0]?.options).toMatchObject({ detached: false, windowsHide: true });
+  });
+
+  it("rejects an oversized Windows command line before spawning", async () => {
+    let spawned = false;
+    await expect(
+      runQoder(fakeConfig({ prompt: "a".repeat(32_500) }), {
+        platform: "win32",
+        spawnProcess: () => {
+          spawned = true;
+          return new FakeChild();
+        },
+      }),
+    ).rejects.toMatchObject({ code: "invalid_input", message: expect.stringContaining("Windows") });
+    expect(spawned).toBe(false);
   });
 
   it("returns a non-zero Qoder exit as a failed envelope", async () => {
@@ -497,4 +731,91 @@ describe("direct execution behavior", () => {
     expect(lines).toHaveLength(1);
     expect(envelope).toMatchObject({ status: "failed", error: { code: "invalid_input" } });
   });
+
+  it.runIf(process.platform === "win32")(
+    "returns invalid_input before Qoder spawn when the Windows command line is too long",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "qoder-windows-command-line-test-"));
+      try {
+        const promptFile = join(root, "delegation-brief.md");
+        await writeFile(promptFile, "a".repeat(32_500), { mode: 0o600 });
+        const executed = spawnSync(
+          process.execPath,
+          [
+            runnerPath,
+            "--cwd",
+            root,
+            "--prompt-file",
+            promptFile,
+            "--qodercli-path",
+            process.execPath,
+          ],
+          { encoding: "utf8" },
+        );
+        const envelope = JSON.parse(executed.stdout.trim());
+
+        expect(executed.status).not.toBe(0);
+        expect(envelope).toMatchObject({
+          status: "failed",
+          error: { code: "invalid_input", message: expect.stringContaining("CreateProcessW") },
+        });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "passes shell metacharacters from a prompt file without executing them",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "qoder-prompt-file-test-"));
+      try {
+        const marker = join(root, "shell-command-ran");
+        const promptFile = join(root, "delegation-brief.md");
+        const executable = join(root, "fake-qodercli");
+        const prompt = [
+          "# Brief",
+          "Use `literal backticks` and quotes: \"double\" 'single'.",
+          `Never execute $(touch ${marker}).`,
+        ].join("\n");
+        const expectedHash = createHash("sha256").update(prompt).digest("hex");
+        await writeFile(promptFile, prompt, { mode: 0o600 });
+        await writeFile(
+          executable,
+          [
+            "#!/usr/bin/env node",
+            'const { createHash } = require("node:crypto");',
+            'const prompt = process.argv.at(-1) ?? "";',
+            'process.stdout.write(JSON.stringify({ hash: createHash("sha256").update(prompt).digest("hex") }));',
+          ].join("\n"),
+          { mode: 0o700 },
+        );
+        await chmod(executable, 0o700);
+
+        const executed = spawnSync(
+          process.execPath,
+          [
+            runnerPath,
+            "--cwd",
+            root,
+            "--prompt-file",
+            promptFile,
+            "--qodercli-path",
+            executable,
+            "--timeout-ms",
+            "5000",
+          ],
+          { encoding: "utf8" },
+        );
+        const envelope = JSON.parse(executed.stdout.trim());
+        const qoderOutput = JSON.parse(envelope.qoderOutput.raw);
+
+        expect(executed.status).toBe(0);
+        expect(qoderOutput).toEqual({ hash: expectedHash });
+        await expect(access(marker)).rejects.toThrow();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });

@@ -1,13 +1,15 @@
 ---
 name: qoder-agent
-description: Delegate bounded coding tasks to a locally installed Qoder CLI through a one-shot, non-interactive Runner. Use when Codex needs Qoder to edit or test files inside an explicitly trusted Git project while Codex retains responsibility for isolated worktrees, exact Qoder-only diff review, safe application, and acceptance.
+description: Delegate bounded coding tasks to a locally installed Qoder CLI through a context-aware, one-shot Runner. Use when Codex needs Qoder to edit or test files inside an explicitly trusted Git project while Codex compiles relevant project context and installed Skill rules into a self-contained task brief and retains responsibility for isolated worktrees, exact Qoder-only diff review, safe application, and acceptance.
 ---
 
 # Qoder Agent
 
 Use the bundled Runner to delegate one narrowly scoped coding task to the
 locally installed Qoder CLI. Keep the task small enough to review as one diff
-and provide the absolute project directory explicitly.
+and use the narrowest absolute working directory that contains every expected
+change. Treat Codex as the context compiler and Qoder as the coding executor:
+Qoder does not need access to Codex Skills or implicit Codex context.
 
 ## Host Execution Requirement
 
@@ -37,7 +39,7 @@ linked, or installed. The source worktree remains untouched while Qoder works.
 
 ```sh
 node /path/to/qoder-agent/scripts/qoder_worktree.mjs prepare \
-  --cwd /absolute/path/to/project
+  --cwd /absolute/path/to/task-scope
 ```
 
 When starting a fresh retry after a failed session, pass the failed session's
@@ -55,8 +57,8 @@ predecessor sessions. If the retry fails, the entire linked chain remains
 available for diagnosis.
 
 Read the JSON response and invoke the Runner with `qoderCwd`, not the source
-directory. After Qoder succeeds, generate and inspect the exact Qoder-only
-patch:
+directory. Before invoking it, compile the delegation brief described below.
+After Qoder succeeds, generate and inspect the exact Qoder-only patch:
 
 ```sh
 node /path/to/qoder-agent/scripts/qoder_worktree.mjs diff \
@@ -79,14 +81,94 @@ Qoder in the source directory. Read
 [references/worktree-review.md](references/worktree-review.md) before using
 this workflow.
 
+## Build the Delegation Brief
+
+Compile every task into this short base contract without loading another
+reference:
+
+```markdown
+# Qoder Delegation Brief v1
+
+## Objective
+
+<One bounded coding objective.>
+
+## Change Scope
+
+May modify: <narrow paths inside qoderCwd>
+Must not modify: <unrelated or protected paths>
+
+## Acceptance Criteria
+
+- <Observable outcome.>
+
+## Verification
+
+- <Exact relevant check, or explain why none applies.>
+
+## Completion Report
+
+Report files changed, checks run and their results, and unresolved limitations.
+```
+
+Do not widen `qoderCwd` merely to expose instructions or specifications. If
+the task genuinely spans multiple targets, use their narrowest common ancestor.
+Reference a context file only when it exists inside `qoderCwd`; otherwise have
+Codex compile its relevant non-sensitive guidance into the brief.
+
+Read [references/delegation-prompt.md](references/delegation-prompt.md)
+completely only when the task needs a context extension: applicable project
+instructions or specifications, an OpenSpec change, portable guidance from
+another Codex Skill, context outside `qoderCwd`, or material rule conflict.
+Add only the relevant optional sections. Never tell Qoder to use a Codex Skill
+or assume that Skill is installed in Qoder.
+
+## Choose Brief Review Policy
+
+Use a three-state pre-execution policy. This is also called Spec mode; it is a
+brief approval gate, not OpenSpec generation.
+
+- `required`: Use when the user explicitly requests Spec mode or a brief
+  preview. Show the preview and wait for explicit approval before invoking
+  Qoder.
+- `off`: Use when the user explicitly asks to skip the preview. This never
+  skips necessary clarification, host-execution approval, or final patch-apply
+  approval.
+- `auto`: Use by default. Show the preview when delegation risk is elevated by
+  ambiguous acceptance, multiple modules or a broad working directory,
+  OpenSpec or other project specifications, compiled rules from another Skill,
+  material rule conflicts or assumptions, public API or architecture changes,
+  migrations, security-sensitive behavior, or dependency/build/deployment
+  changes. Prefer no interruption for precise, local, easily reversible tasks.
+
+When review is required, show a concise preview containing the objective,
+context and compiled rules when present, change scope, acceptance criteria,
+verification, and material assumptions. Do not invoke Qoder until the user
+approves it. Re-present the preview after any material change to those fields.
+Brief approval authorizes only the Qoder run; it never authorizes applying the
+resulting patch.
+
+## Write the Brief Safely
+
+Write the complete approved or auto-accepted brief to a private temporary file
+outside `qoderCwd`. For a worktree session, place `delegation-brief.md` beside
+the returned `statePath` so successful session cleanup removes it. Use a
+non-shell file-writing tool and restrict access to the current user when
+possible.
+
+Never interpolate brief content into a shell command. Do not use `echo`,
+`printf`, shell redirection, command substitution, or a heredoc to create or
+pass it. The brief may contain quotes, backticks, `$()`, and arbitrary
+multi-line text. Do not include credentials or secrets.
+
 ## Invoke the Runner
 
 Run:
 
 ```sh
 node /path/to/qoder-agent/scripts/run_qoder.mjs \
-  --cwd /absolute/path/to/project \
-  --prompt "Implement the bounded task and run the relevant tests. Do not commit or push."
+  --cwd /absolute/path/to/task-scope \
+  --prompt-file /absolute/path/to/delegation-brief.md
 ```
 
 In Codex, submit this command with `sandbox_permissions:
@@ -101,18 +183,20 @@ defaults model request retries to three and always uses Qoder `permission-mode
 auto`, JSON output, and no session persistence. Do not pass credentials,
 permission overrides, tool filters, or system-prompt overrides.
 
+The inline `--prompt` option exists only for compatibility. Never use it from
+this Skill for model-generated or multi-line task content.
+
 For a portable installation, make `qodercli` available on `PATH` for the
 Codex process, or configure an absolute `QODERCLI_PATH`. The Runner never
 guesses a user-home installation path.
 
 ## Collaborate Safely
 
-1. Record the task scope, source `git status`, and relevant source diff. Do
-   not modify or stage source changes to prepare Qoder's worktree.
-2. Create the isolated worktree and invoke the Runner with the returned
-   `qoderCwd`. Use a bounded prompt that names requested files, behavior, and
-   checks. State that Qoder must not commit, push, publish, stage, stash,
-   reset, clean, or modify files outside `cwd`.
+1. Record the narrowest task `cwd`, source `git status`, and relevant source
+   diff. Do not modify or stage source changes to prepare Qoder's worktree.
+2. Create the isolated worktree, compile the brief against the returned
+   `qoderCwd`, apply the brief-review policy, write the approved or
+   auto-accepted brief safely, and invoke the Runner with `--prompt-file`.
 3. Let Qoder work only under the Runner's fixed safety policy and `auto`
    permissions. Do not change modes if an action is denied.
 4. Generate the coordinator's review patch, inspect that exact patch and the
@@ -130,9 +214,10 @@ guesses a user-home installation path.
    `--retry-of <statePath>` so a later successful apply can clean the linked
    chain. For a patch that was applied but whose cleanup failed, retry
    `dispose` directly. Apply only the narrow model-queue recovery below.
-7. After a successful run, issue at most two explicit correction tasks. Generate
-   a new review session for every correction task; never loop without an
-   explicit new task.
+7. After a successful run, issue at most two explicit correction tasks. Compile
+   a new delegation brief, reapply the brief-review policy, and generate a new
+   review session for every correction task; never loop without an explicit
+   new task.
 
 ## Recover a Model Queue Failure
 
@@ -146,22 +231,21 @@ queue text.
    `indexModified` is true, stop because Qoder violated the index boundary.
 3. Obtain explicit approval for one recovery continuation. Never retry
    automatically or more than once.
-4. Re-run the Runner in the same `qoderCwd` and same prepared worktree. Restate
-   the original task and acceptance criteria, and instruct Qoder to inspect and
-   repair existing uncommitted changes rather than restart from scratch.
+4. Re-run the Runner in the same `qoderCwd` and same prepared worktree. Reissue
+   the original delegation brief with an objective that instructs Qoder to
+   inspect and repair existing uncommitted changes rather than restart from
+   scratch. Preserve its required context, compiled rules, scope, acceptance
+   criteria, and checks.
 5. After success, continue the original `diff`, independent checks, review, and
    apply flow. Do not create a new review session for queue recovery; doing so
    could turn the interrupted edits into an excluded baseline.
 
-Use this recovery prompt shape:
+Use this recovery objective inside the reissued delegation brief:
 
 ```text
 Continue the interrupted bounded task from the existing uncommitted changes in
 this worktree. Inspect the current diff before editing and do not restart from
 scratch.
-
-Original task and acceptance criteria:
-<repeat the original bounded task and checks>
 
 Repair incomplete or invalid edits, complete the task, and run the relevant
 checks. Do not commit, stage, stash, reset, clean, or modify Git worktree

@@ -1,4 +1,4 @@
 interface:
   display_name: "Qoder Agent"
-  short_description: "Review isolated Qoder changes before applying"
-  default_prompt: "Use $qoder-agent to run a bounded Qoder task in an isolated worktree and review its diff before applying it."
+  short_description: "Compile context-aware Qoder tasks for safe review"
+  default_prompt: "Use $qoder-agent to compile relevant project context and Skill guidance into a bounded Qoder task, then review its isolated diff before applying it."

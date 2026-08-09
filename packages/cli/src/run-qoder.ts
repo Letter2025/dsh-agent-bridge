@@ -17,6 +17,7 @@ export function parseRunnerArgs(argv: string[]): ParsedRunnerArgs {
   const options = new Set([
     "--cwd",
     "--prompt",
+    "--prompt-file",
     "--qodercli-path",
     "--model",
     "--timeout-ms",
@@ -25,6 +26,7 @@ export function parseRunnerArgs(argv: string[]): ParsedRunnerArgs {
   const optionKeys: Record<string, string> = {
     "--cwd": "cwd",
     "--prompt": "prompt",
+    "--prompt-file": "promptFile",
     "--qodercli-path": "qodercliPath",
     "--model": "model",
     "--timeout-ms": "timeoutMs",
@@ -52,16 +54,21 @@ export function parseRunnerArgs(argv: string[]): ParsedRunnerArgs {
 
   const cwd = values.cwd;
   const prompt = values.prompt;
+  const promptFile = values.promptFile;
   if (cwd === undefined || cwd.trim() === "") {
     throw new RunnerError("invalid_input", "--cwd is required and must be non-empty.");
   }
-  if (prompt === undefined || prompt.trim() === "") {
-    throw new RunnerError("invalid_input", "--prompt is required and must be non-empty.");
+  if ((prompt === undefined) === (promptFile === undefined)) {
+    throw new RunnerError("invalid_input", "Exactly one of --prompt or --prompt-file is required.");
   }
-  if (Buffer.byteLength(prompt, "utf8") > PROMPT_LIMIT_BYTES) {
+  if (prompt !== undefined && prompt.trim() === "") {
+    throw new RunnerError("invalid_input", "--prompt must be non-empty when supplied.");
+  }
+  if (prompt !== undefined && Buffer.byteLength(prompt, "utf8") > PROMPT_LIMIT_BYTES) {
     throw new RunnerError("invalid_input", "--prompt exceeds the 64 KiB limit.");
   }
   for (const [key, option] of [
+    ["promptFile", "--prompt-file"],
     ["qodercliPath", "--qodercli-path"],
     ["model", "--model"],
     ["timeoutMs", "--timeout-ms"],
@@ -76,6 +83,7 @@ export function parseRunnerArgs(argv: string[]): ParsedRunnerArgs {
   return {
     cwd,
     prompt,
+    promptFile,
     qodercliPath: values.qodercliPath,
     model: values.model,
     timeoutMs: values.timeoutMs,

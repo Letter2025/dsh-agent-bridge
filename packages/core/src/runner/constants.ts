@@ -1,4 +1,4 @@
-export const RUNNER_VERSION = "0.2.0";
+export const RUNNER_VERSION = "0.3.0";
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_TIMEOUT_MS = 300_000;
 export const MAX_TIMEOUT_MS = 1_800_000;
@@ -7,6 +7,7 @@ export const MAX_MODEL_REQUEST_RETRIES = 10;
 export const DEFAULT_CAPTURE_LIMIT_BYTES = 256 * 1024;
 export const HARD_OUTPUT_LIMIT_BYTES = 1024 * 1024;
 export const PROMPT_LIMIT_BYTES = 64 * 1024;
+export const WINDOWS_COMMAND_LINE_LIMIT_UTF16 = 32_767;
 export const TERMINATION_GRACE_MS = 2_000;
 
 export const FIXED_SAFETY_POLICY = [

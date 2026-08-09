@@ -40,13 +40,18 @@ the co-installed `qoder-agent`; keep the executable bit on its
 
 ## Run the Runner
 
-The public command requires an absolute project directory and a bounded task:
+The public command requires the narrowest absolute directory that contains the
+expected changes and a bounded task brief. Write generated or multiline briefs
+to a private file with a non-shell editor or file-writing tool:
 
 ```sh
 node skill/qoder-agent/scripts/run_qoder.mjs \
-  --cwd /absolute/path/to/project \
-  --prompt "Implement the requested change and run the relevant tests. Do not commit or push."
+  --cwd /absolute/path/to/task-scope \
+  --prompt-file /absolute/path/to/delegation-brief.md
 ```
+
+The inline `--prompt` form remains available for compatibility, but generated
+briefs must not be interpolated into a shell command.
 
 Optional flags are `--qodercli-path`, `--model`, `--timeout-ms`, and
 `--max-model-request-retries`. The environment equivalents are
@@ -58,7 +63,9 @@ platform-specific process-tree termination.
 
 Invoke `$qoder-agent` or `$qoder-worker`; both use the same Runner. Read
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) for the Codex
-collaboration workflow and
+collaboration workflow,
+[skill/qoder-agent/references/delegation-prompt.md](skill/qoder-agent/references/delegation-prompt.md)
+for the context-aware `Qoder Delegation Brief v1` compiled by Codex, and
 [skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
 for the result envelope.
 
@@ -102,7 +109,10 @@ those generated `.mjs` files directly.
 
 Default checks use fake child-process boundaries and do not invoke a Qoder
 model. For an explicit end-to-end check, use a disposable repository outside
-this project and create its baseline commit manually:
+this project and create its baseline commit manually. Before running the
+commands, use a trusted editor or non-shell file-writing tool to create the
+private file `/absolute/path/to/qoder-verification-brief.md` outside the
+fixture, containing the bounded verification task:
 
 ```sh
 fixture="$(mktemp -d /tmp/qoder-agent-fixture.XXXXXX)"
@@ -116,7 +126,7 @@ git -C "$fixture" commit -m baseline
 qodercli --version
 node skill/qoder-agent/scripts/run_qoder.mjs \
   --cwd "$fixture" \
-  --prompt "Change example.txt to contain exactly one additional line, run a relevant check, and do not commit, push, publish, reset, or clean."
+  --prompt-file /absolute/path/to/qoder-verification-brief.md
 
 git -C "$fixture" status --short
 git -C "$fixture" diff
