@@ -1,0 +1,18 @@
+{
+  "name": "@qoder-agent-bridge/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Command-line adapters for Qoder Agent Bridge.",
+  "license": "MIT",
+  "bin": {
+    "qoder-agent-run": "./dist/run-qoder.js",
+    "qoder-agent-worktree": "./dist/qoder-worktree.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "dependencies": {
+    "@qoder-agent-bridge/core": "workspace:*"
+  }
+}

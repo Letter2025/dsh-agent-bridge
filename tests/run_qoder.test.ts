@@ -1,24 +1,25 @@
 import { EventEmitter } from "node:events";
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnOptions } from "node:child_process";
 import { PassThrough } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { PROMPT_LIMIT_BYTES, runQoder } from "@qoder-agent-bridge/core";
+import { parseRunnerArgs } from "../packages/cli/src/run-qoder";
 import {
   DEFAULT_MAX_MODEL_REQUEST_RETRIES,
   DEFAULT_TIMEOUT_MS,
   FIXED_SAFETY_POLICY,
   HARD_OUTPUT_LIMIT_BYTES,
-  PROMPT_LIMIT_BYTES,
+} from "../packages/core/src/runner/constants";
+import {
   buildQoderArgs,
   normalizeCwd,
-  parseArgs,
   parseModelRequestRetries,
   parseTimeout,
-  redactSecrets,
   resolveConfig,
   resolveExecutable,
-  runQoder,
-} from "../skill/qoder-agent/scripts/run_qoder.mjs";
+} from "../packages/core/src/runner/config";
+import { redactSecrets } from "../packages/core/src/runner/output";
 
 const runnerPath = fileURLToPath(
   new URL("../skill/qoder-agent/scripts/run_qoder.mjs", import.meta.url),
@@ -62,10 +63,10 @@ function fakeFs(cwd = "/tmp/qoder-fixture", executablePaths: string[] = ["/tmp/q
 
 describe("Runner input and command construction", () => {
   it("requires an absolute cwd and a bounded non-empty prompt", () => {
-    expect(() => parseArgs(["--prompt", "task"])).toThrow(/--cwd is required/);
-    expect(() => parseArgs(["--cwd", "relative", "--prompt", "task"])).not.toThrow();
+    expect(() => parseRunnerArgs(["--prompt", "task"])).toThrow(/--cwd is required/);
+    expect(() => parseRunnerArgs(["--cwd", "relative", "--prompt", "task"])).not.toThrow();
     expect(
-      parseArgs([
+      parseRunnerArgs([
         "--cwd",
         "/tmp",
         "--prompt",
@@ -82,11 +83,11 @@ describe("Runner input and command construction", () => {
       timeoutMs: "123",
       maxModelRequestRetries: "4",
     });
-    expect(() => parseArgs(["--cwd", "/tmp", "--prompt", " "])).toThrow(/--prompt/);
+    expect(() => parseRunnerArgs(["--cwd", "/tmp", "--prompt", " "])).toThrow(/--prompt/);
     expect(() =>
-      parseArgs(["--cwd", "/tmp", "--prompt", "a".repeat(PROMPT_LIMIT_BYTES + 1)]),
+      parseRunnerArgs(["--cwd", "/tmp", "--prompt", "a".repeat(PROMPT_LIMIT_BYTES + 1)]),
     ).toThrow(/64 KiB/);
-    expect(() => parseArgs(["--cwd", "/tmp", "--prompt", "task", "--unknown"])).toThrow(
+    expect(() => parseRunnerArgs(["--cwd", "/tmp", "--prompt", "task", "--unknown"])).toThrow(
       /Unsupported/,
     );
   });
@@ -260,10 +261,9 @@ describe("Runner preflight and resolution", () => {
 describe("Runner process boundary and envelope", () => {
   it("returns a successful bounded envelope without parsing Qoder JSON", async () => {
     const child = new FakeChild();
-    const calls: Array<{ executable: string; args: string[]; options: Record<string, unknown> }> =
-      [];
+    const calls: Array<{ executable: string; args: string[]; options: SpawnOptions }> = [];
     const resultPromise = runQoder(fakeConfig(), {
-      spawnProcess: (executable: string, args: string[], options: Record<string, unknown>) => {
+      spawnProcess: (executable: string, args: string[], options: SpawnOptions) => {
         calls.push({ executable, args, options });
         return child;
       },
@@ -294,10 +294,10 @@ describe("Runner process boundary and envelope", () => {
 
   it("hides the Qoder console and does not detach it on Windows", async () => {
     const child = new FakeChild();
-    const calls: Array<{ options: Record<string, unknown> }> = [];
+    const calls: Array<{ options: SpawnOptions }> = [];
     const resultPromise = runQoder(fakeConfig(), {
       platform: "win32",
-      spawnProcess: (_executable: string, _args: string[], options: Record<string, unknown>) => {
+      spawnProcess: (_executable: string, _args: string[], options: SpawnOptions) => {
         calls.push({ options });
         return child;
       },
@@ -400,12 +400,12 @@ describe("Runner process boundary and envelope", () => {
     const taskkills: Array<{
       executable: string;
       args: string[];
-      options: Record<string, unknown>;
+      options: SpawnOptions;
     }> = [];
     const resultPromise = runQoder(fakeConfig({ timeoutMs: 5 }), {
       platform: "win32",
       spawnProcess: () => child,
-      spawnTreeKiller: (executable: string, args: string[], options: Record<string, unknown>) => {
+      spawnTreeKiller: (executable: string, args: string[], options: SpawnOptions) => {
         taskkills.push({ executable, args, options });
         const killer = new EventEmitter();
         if (args.includes("/f")) {

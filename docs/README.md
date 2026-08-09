@@ -30,9 +30,11 @@ Copy both Skill directories to either:
   personal use, alongside `qoder-worker/`.
 
 `qoder-agent` contains `SKILL.md`, `agents/openai.yaml`, the protocol
-reference, and the executable `scripts/run_qoder.mjs`. `qoder-worker` contains
-the alias metadata and instructions, and requires the co-installed
-`qoder-agent`. No compiled Skill artifact is required.
+reference, and self-contained generated executables under `scripts/`.
+Their TypeScript sources live in `packages/core` and `packages/cli`; regenerate
+them with `pnpm build` instead of editing the `.mjs` files. `qoder-worker`
+contains the alias metadata and instructions, and requires the co-installed
+`qoder-agent`.
 
 ## Verification evidence
 

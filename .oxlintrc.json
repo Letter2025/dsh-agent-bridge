@@ -5,5 +5,5 @@
     "no-console": "error",
     "no-debugger": "error"
   },
-  "ignorePatterns": ["node_modules", "dist", "coverage"]
+  "ignorePatterns": ["node_modules", "dist", "coverage", "skill/qoder-agent/scripts/*.mjs"]
 }

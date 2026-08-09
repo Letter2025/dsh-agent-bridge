@@ -89,9 +89,14 @@ pnpm test
 pnpm build
 ```
 
-The Skill Runner is committed and executed directly from
-`skill/qoder-agent/`; package builds cover only the existing workspace
-packages and do not emit a second Runner copy under `dist/`.
+The maintained implementation lives in TypeScript under `packages/core` and
+`packages/cli`. `packages/core` owns the reusable Runner and worktree lifecycle;
+`packages/cli` owns argument parsing, process signals, JSON output, and exit
+codes and depends on core through the `@qoder-agent-bridge/core` workspace
+package boundary. TypeScript source uses bundler-style extensionless imports.
+`pnpm build` emits package artifacts and regenerates the committed,
+self-contained Skill executables in `skill/qoder-agent/scripts/`. Do not edit
+those generated `.mjs` files directly.
 
 ## Optional real verification
 

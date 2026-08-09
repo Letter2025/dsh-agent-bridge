@@ -8,10 +8,9 @@ import {
   createReviewPatch,
   disposeWorktree,
   inspectWorktree,
-  main,
-  parseArgs,
   prepareWorktree,
-} from "../skill/qoder-agent/scripts/qoder_worktree.mjs";
+} from "@qoder-agent-bridge/core";
+import { executeWorktreeCommand, parseWorktreeArgs } from "../packages/cli/src/qoder-worktree";
 
 const fixtures: string[] = [];
 
@@ -48,20 +47,22 @@ async function createFixture() {
 
 describe("Qoder isolated worktree coordinator", () => {
   it("validates its narrow lifecycle arguments", () => {
-    expect(() => parseArgs(["prepare", "--cwd", "relative"])).not.toThrow();
+    expect(() => parseWorktreeArgs(["prepare", "--cwd", "relative"])).not.toThrow();
     expect(
-      parseArgs(["prepare", "--cwd", "relative", "--retry-of", "/tmp/session.json"]),
+      parseWorktreeArgs(["prepare", "--cwd", "relative", "--retry-of", "/tmp/session.json"]),
     ).toMatchObject({ retryOf: "/tmp/session.json" });
-    expect(() => parseArgs(["prepare", "--state", "/tmp/session.json"])).toThrow(
+    expect(() => parseWorktreeArgs(["prepare", "--state", "/tmp/session.json"])).toThrow(
       /prepare requires/,
     );
-    expect(() => parseArgs(["diff", "--state", "/tmp/session.json", "--discard"])).toThrow(
+    expect(() => parseWorktreeArgs(["diff", "--state", "/tmp/session.json", "--discard"])).toThrow(
       /diff requires/,
     );
-    expect(() => parseArgs(["inspect", "--state", "/tmp/session.json"])).not.toThrow();
-    expect(() => parseArgs(["dispose", "--state", "/tmp/session.json", "--discard"])).not.toThrow();
+    expect(() => parseWorktreeArgs(["inspect", "--state", "/tmp/session.json"])).not.toThrow();
     expect(() =>
-      parseArgs(["apply", "--state", "/tmp/session.json", "--retry-of", "/tmp/old.json"]),
+      parseWorktreeArgs(["dispose", "--state", "/tmp/session.json", "--discard"]),
+    ).not.toThrow();
+    expect(() =>
+      parseWorktreeArgs(["apply", "--state", "/tmp/session.json", "--retry-of", "/tmp/old.json"]),
     ).toThrow(/apply requires/);
   });
 
@@ -97,7 +98,9 @@ describe("Qoder isolated worktree coordinator", () => {
     expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("user working\n");
     expect(await readFile(join(root, "untracked.txt"), "utf8")).toBe("keep this baseline\n");
 
-    await expect(main(["apply", "--state", session.statePath])).resolves.toMatchObject({
+    await expect(
+      executeWorktreeCommand(["apply", "--state", session.statePath]),
+    ).resolves.toMatchObject({
       status: "succeeded",
       operation: "apply",
       cleaned: true,
@@ -141,7 +144,9 @@ describe("Qoder isolated worktree coordinator", () => {
     await writeFile(join(second.worktreeRoot, "tracked.txt"), "final retry result\n");
     await createReviewPatch(second.statePath);
 
-    await expect(main(["apply", "--state", second.statePath])).resolves.toMatchObject({
+    await expect(
+      executeWorktreeCommand(["apply", "--state", second.statePath]),
+    ).resolves.toMatchObject({
       status: "succeeded",
       operation: "apply",
       cleaned: true,

@@ -1,5 +1,6 @@
 {
   "$schema": "https://oxc.rs/schemas/oxfmt-config.json",
+  "ignorePatterns": ["skill/qoder-agent/scripts/*.mjs"],
   "printWidth": 100,
   "semi": true,
   "singleQuote": false,

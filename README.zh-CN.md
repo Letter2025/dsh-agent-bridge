@@ -79,8 +79,12 @@ pnpm test
 pnpm build
 ```
 
-Skill Runner 直接从 `skill/qoder-agent/` 执行；package 构建只覆盖现有 workspace
-包，不会在 `dist/` 下生成第二份 Runner。
+维护源码位于 `packages/core` 和 `packages/cli` 的 TypeScript 文件中：`core`
+负责可复用的 Runner 与 worktree 生命周期，`cli` 负责参数解析、进程信号、JSON
+输出和退出码，并通过 `@qoder-agent-bridge/core` workspace package 引用 core。
+TypeScript 源码统一使用 bundler 风格的无扩展名导入。`pnpm build` 会同时生成 package 产物，以及提交到
+`skill/qoder-agent/scripts/` 的自包含 Skill 可执行文件。不要直接修改这些生成的
+`.mjs` 文件。
 
 ## 可选真实验收
 

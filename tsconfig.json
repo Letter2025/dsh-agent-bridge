@@ -3,8 +3,8 @@
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -15,8 +15,17 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@qoder-agent-bridge/core": ["./packages/core/src/index.ts"]
+    }
   },
-  "include": ["packages/**/*.ts", "skill/**/*.ts", "tsdown.config.ts", "vitest.config.ts"],
+  "include": [
+    "packages/**/*.ts",
+    "tests/**/*.ts",
+    "skill/**/*.ts",
+    "tsdown.config.ts",
+    "vitest.config.ts"
+  ],
   "exclude": ["node_modules", "dist", "coverage"]
 }
