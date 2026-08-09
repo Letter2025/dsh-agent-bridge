@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { access, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyReviewPatch,
@@ -13,6 +14,9 @@ import {
 import { executeWorktreeCommand, parseWorktreeArgs } from "../packages/cli/src/qoder-worktree";
 
 const fixtures: string[] = [];
+const worktreeRunnerPath = fileURLToPath(
+  new URL("../skill/qoder-agent/scripts/qoder_worktree.mjs", import.meta.url),
+);
 
 afterEach(async () => {
   await Promise.all(
@@ -224,5 +228,29 @@ describe("Qoder isolated worktree coordinator", () => {
     expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("base\n");
 
     await disposeWorktree(session.statePath, true);
+  });
+});
+
+describe("generated worktree executable", () => {
+  it("does not execute a command when imported", () => {
+    const importScript = `await import(${JSON.stringify(pathToFileURL(worktreeRunnerPath).href)});`;
+    const imported = spawnSync(process.execPath, ["--input-type=module", "-e", importScript], {
+      encoding: "utf8",
+    });
+
+    expect(imported.status).toBe(0);
+    expect(imported.stdout).toBe("");
+    expect(imported.stderr).toBe("");
+  });
+
+  it("emits one JSON failure for invalid direct input", () => {
+    const executed = spawnSync(process.execPath, [worktreeRunnerPath], { encoding: "utf8" });
+    const lines = executed.stdout.trim().split("\n");
+    const result = JSON.parse(lines[0] ?? "{}");
+
+    expect(executed.status).not.toBe(0);
+    expect(lines).toHaveLength(1);
+    expect(executed.stderr).toBe("");
+    expect(result).toMatchObject({ status: "failed", error: { code: "invalid_input" } });
   });
 });

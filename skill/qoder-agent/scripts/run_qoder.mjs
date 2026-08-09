@@ -157,6 +157,7 @@ async function resolveConfig(parsed, env = process.env, fsApi = DEFAULT_FS) {
 		cwd,
 		prompt: parsed.prompt,
 		executable,
+		env,
 		model: (parsed.model ?? env.QODER_MODEL)?.trim() || void 0,
 		timeoutMs: configuredTimeout === void 0 ? DEFAULT_TIMEOUT_MS : parseTimeout(configuredTimeout, parsed.timeoutMs === void 0 ? "QODER_TIMEOUT_MS" : "--timeout-ms"),
 		maxModelRequestRetries: configuredRetries === void 0 ? 3 : parseModelRequestRetries(configuredRetries, parsed.maxModelRequestRetries === void 0 ? "QODER_MAX_MODEL_REQUEST_RETRIES" : "--max-model-request-retries"),
@@ -382,7 +383,7 @@ function runQoder(config, dependencies = {}) {
 		try {
 			child = spawnProcess(config.executable, args, {
 				cwd: config.cwd,
-				env: process.env,
+				env: config.env,
 				shell: false,
 				detached: platform !== "win32",
 				windowsHide: true,

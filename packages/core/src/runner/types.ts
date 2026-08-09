@@ -44,6 +44,7 @@ export interface RunnerConfig {
   cwd: string;
   prompt: string;
   executable: string;
+  env: NodeJS.ProcessEnv;
   model: string | undefined;
   timeoutMs: number;
   maxModelRequestRetries: number;

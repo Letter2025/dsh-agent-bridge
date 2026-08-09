@@ -136,6 +136,7 @@ export async function resolveConfig(
     cwd,
     prompt: parsed.prompt,
     executable,
+    env,
     model: (parsed.model ?? env.QODER_MODEL)?.trim() || undefined,
     timeoutMs:
       configuredTimeout === undefined

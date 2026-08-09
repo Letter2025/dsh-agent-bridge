@@ -36,6 +36,7 @@ function fakeConfig(overrides: Record<string, unknown> = {}) {
     cwd: "/tmp/qoder-fixture",
     prompt: "Make the requested bounded change.",
     executable: "/tmp/qodercli",
+    env: { RUNNER_TEST_ENV: "forwarded" },
     model: undefined,
     timeoutMs: 1000,
     maxModelRequestRetries: DEFAULT_MAX_MODEL_REQUEST_RETRIES,
@@ -286,6 +287,7 @@ describe("Runner process boundary and envelope", () => {
     });
     expect(calls[0]?.options).toMatchObject({
       cwd: "/tmp/qoder-fixture",
+      env: { RUNNER_TEST_ENV: "forwarded" },
       shell: false,
       detached: true,
       windowsHide: true,

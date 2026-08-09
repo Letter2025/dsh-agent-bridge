@@ -188,7 +188,7 @@ export function runQoder(
     try {
       child = spawnProcess(config.executable, args, {
         cwd: config.cwd,
-        env: process.env,
+        env: config.env,
         shell: false,
         detached: platform !== "win32",
         windowsHide: true,
