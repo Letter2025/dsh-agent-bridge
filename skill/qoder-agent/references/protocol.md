@@ -63,10 +63,10 @@ Supported configuration uses CLI over environment over defaults:
 | ---------- | ----------------------------- | --------------------------------- | -------------------- |
 | executable | `--qodercli-path`             | `QODERCLI_PATH`                   | `qodercli` in `PATH` |
 | model      | `--model`                     | `QODER_MODEL`                     | unset; Qoder chooses |
-| timeout    | `--timeout-ms`                | `QODER_TIMEOUT_MS`                | 300000 ms            |
+| timeout    | `--timeout-ms`                | `QODER_TIMEOUT_MS`                | 900000 ms            |
 | retries    | `--max-model-request-retries` | `QODER_MAX_MODEL_REQUEST_RETRIES` | 3                    |
 
-Timeout values must be positive integers and cannot exceed 1800000 ms. There
+Timeout values must be positive integers and cannot exceed 3600000 ms. There
 is no permission-mode environment variable. Model request retries must be an
 integer from 0 through 10. The Runner always builds this argument array, with
 the prompt after `--`:
@@ -103,7 +103,7 @@ object on stdout:
 ```json
 {
   "protocolVersion": 1,
-  "runnerVersion": "0.4.0",
+  "runnerVersion": "0.4.1",
   "status": "succeeded",
   "cwd": "/absolute/project",
   "executable": "/absolute/path/to/qodercli",

@@ -188,9 +188,10 @@ Optional configuration flags are `--qodercli-path`, `--model`, and
 `--timeout-ms`, and `--max-model-request-retries`. Their environment
 equivalents are `QODERCLI_PATH`, `QODER_MODEL`, `QODER_TIMEOUT_MS`, and
 `QODER_MAX_MODEL_REQUEST_RETRIES`; CLI values take precedence. The Runner
-defaults model request retries to three and always uses Qoder `permission-mode
-auto`, JSON output, and no session persistence. Do not pass credentials,
-permission overrides, tool filters, or system-prompt overrides.
+defaults to a 15-minute timeout and allows at most one hour. It defaults model
+request retries to three and always uses Qoder `permission-mode auto`, JSON
+output, and no session persistence. Do not pass credentials, permission
+overrides, tool filters, or system-prompt overrides.
 
 The inline `--prompt` option exists only for compatibility. Never use it from
 this Skill for model-generated or multi-line task content.

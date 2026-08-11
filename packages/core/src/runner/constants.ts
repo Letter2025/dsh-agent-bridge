@@ -1,7 +1,7 @@
-export const RUNNER_VERSION = "0.4.0";
+export const RUNNER_VERSION = "0.4.1";
 export const PROTOCOL_VERSION = 1;
-export const DEFAULT_TIMEOUT_MS = 300_000;
-export const MAX_TIMEOUT_MS = 1_800_000;
+export const DEFAULT_TIMEOUT_MS = 900_000;
+export const MAX_TIMEOUT_MS = 3_600_000;
 export const DEFAULT_MAX_MODEL_REQUEST_RETRIES = 3;
 export const MAX_MODEL_REQUEST_RETRIES = 10;
 export const DEFAULT_CAPTURE_LIMIT_BYTES = 256 * 1024;
