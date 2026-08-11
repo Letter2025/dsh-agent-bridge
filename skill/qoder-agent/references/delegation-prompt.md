@@ -136,9 +136,16 @@ application or a materially different correction.
 
 ## Corrections and Recovery
 
-Compile a new brief and reapply the Brief Review policy for each approved
-correction task. For the single allowed model-queue continuation, reissue the
-original brief in the same worktree, preserve its context and constraints, and
-change only the objective to continue from and repair the existing uncommitted
-changes. Never rely on prior session memory because the Runner disables session
-persistence.
+For each automatic in-scope correction allowed by `SKILL.md`, compile a new
+brief that preserves the complete original objective, required context,
+compiled rules, scope, acceptance criteria, verification, assumptions, and
+stop conditions. Add the concrete review findings and direct Qoder to implement
+the whole task with those defects corrected. Do not write a findings-only brief:
+the new review worktree starts from the source baseline and does not contain the
+rejected candidate. Reapply Brief Review; a precise correction does not by
+itself elevate `auto` risk.
+
+For the single allowed model-queue continuation, reissue the original brief in
+the same worktree, preserve its context and constraints, and change only the
+objective to continue from and repair the existing uncommitted changes. Never
+rely on prior session memory because the Runner disables session persistence.

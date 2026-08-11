@@ -175,6 +175,12 @@ In Codex, submit this command with `sandbox_permissions:
 "require_escalated"`. Never use an escalation to add Qoder permission
 overrides, tool filters, or system-prompt overrides.
 
+The user's original bounded task authorizes in-scope correction runs described
+below; do not ask for separate conversational permission merely because a new
+Qoder session is needed. Host-execution approval remains a separate sandbox
+requirement: submit the exact escalated command when needed and let the command
+approval mechanism handle it.
+
 The final envelope is emitted after Qoder exits and, with `--prompt-file`, is
 first saved as `<prompt-file>.result.json`. While no exit code is available,
 keep waiting on the same command session; empty stdout and worktree inspections
@@ -209,10 +215,12 @@ guesses a user-home installation path.
    auto-accepted brief safely, and invoke the Runner with `--prompt-file`.
 3. Let Qoder work only under the Runner's fixed safety policy and `auto`
    permissions. Do not change modes if an action is denied.
-4. Generate the coordinator's review patch, inspect that exact patch and the
-   temporary-worktree test output independently, and present them to the user.
-   Do not treat Qoder's self-reported summary as acceptance evidence.
-5. Wait for explicit approval before applying. On approval, run `apply`; it
+4. Generate the coordinator's review patch, inspect that exact patch, and run
+   the relevant checks independently. Do not treat Qoder's self-reported
+   summary as acceptance evidence. If review finds a concrete in-scope defect,
+   run the bounded correction cycle below before presenting a candidate.
+5. Present only a candidate that passes independent review, then wait for
+   explicit approval before applying. On approval, run `apply`; it
    automatically disposes the temporary worktree after a successful patch
    application. If its preflight detects a conflict, report it and leave the
    source and temporary worktree untouched.
@@ -224,10 +232,19 @@ guesses a user-home installation path.
    `--retry-of <statePath>` so a later successful apply can clean the linked
    chain. For a patch that was applied but whose cleanup failed, retry
    `dispose` directly. Apply only the narrow model-queue recovery below.
-7. After a successful run, issue at most two explicit correction tasks. Compile
-   a new delegation brief, reapply the brief-review policy, and generate a new
-   review session for every correction task; never loop without an explicit
-   new task.
+7. After a successful Runner execution whose candidate fails independent
+   review, automatically issue at most two correction tasks when every finding
+   is concrete, verifiable, and inside the original objective, scope, and
+   acceptance criteria. The original task authorization covers these runs; an
+   "explicit correction task" means a new bounded brief, not new conversational
+   approval. Preserve the full original task and add the review findings; a new
+   worktree does not contain the prior candidate. Reapply Brief Review: under
+   `auto`, a precise in-scope correction does not itself require a preview;
+   `required` still does. Create each correction session with `--retry-of` the
+   rejected session, rerun independent review, and count no more than two
+   correction runs after the initial attempt. Stop and report retained sessions
+   if the correction needs a material decision or scope expansion, exhausts the
+   limit, or still fails. Never apply an unaccepted candidate.
 
 ## Recover a Model Queue Failure
 

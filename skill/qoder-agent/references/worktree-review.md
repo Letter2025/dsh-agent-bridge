@@ -24,9 +24,11 @@ not invoke Qoder; Qoder must still run only through `run_qoder.mjs`.
    preserved baseline to Qoder's result. The JSON response lists changed files
    and returns `baselineTree` for direct Git review.
 6. Inspect `git -C <worktreeRoot> diff --cached <baselineTree>` or the patch,
-   and run checks in `<qoderCwd>`. Present that evidence and wait for explicit
-   user approval.
-7. Only after approval, run `qoder_worktree.mjs apply --state <statePath>`.
+   and run checks in `<qoderCwd>`. If the candidate passes, present that
+   evidence and wait for explicit user approval. If it has a concrete in-scope
+   defect, use the correction lifecycle below before presenting a candidate.
+7. Only after a passing candidate receives approval, run
+   `qoder_worktree.mjs apply --state <statePath>`.
    It runs `git apply --check --binary` against the source first, then applies
    the patch without staging it. After a successful application it automatically
    removes the temporary worktree and session. It never creates a commit or
@@ -41,6 +43,22 @@ not invoke Qoder; Qoder must still run only through `run_qoder.mjs`.
 
 Every coordinator command must receive narrowly scoped host execution. Do not
 grant reusable arbitrary shell or Node access.
+
+## Review Corrections
+
+The original task authorizes at most two automatic correction runs after the
+initial successful Runner execution when independent review finds only
+concrete, verifiable, in-scope defects. Do not ask for conversational approval
+solely to start such a run. Prepare a new session with the rejected session as
+`--retry-of`, and reissue the complete original task plus the review findings;
+the new worktree starts from the source baseline rather than the rejected
+candidate. Generate and independently review its new patch. A later successful
+apply cleans the linked rejected sessions.
+
+Stop without correction when the finding requires a material user decision,
+scope expansion, or a third correction run. Runner failures follow the normal
+failure rules, not this review-correction lifecycle. Final patch application
+always requires explicit user approval.
 
 ## Queue Recovery
 
