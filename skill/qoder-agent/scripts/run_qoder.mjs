@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { constants, realpathSync } from "node:fs";
+import { access, lstat, open, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { delimiter, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { access, lstat, open, realpath, stat } from "node:fs/promises";
 import "node:os";
 //#region packages/core/src/runner/constants.ts
-const RUNNER_VERSION = "0.3.0";
+const RUNNER_VERSION = "0.4.0";
 const DEFAULT_TIMEOUT_MS = 3e5;
 const MAX_TIMEOUT_MS = 18e5;
 const FIXED_SAFETY_POLICY = [
@@ -537,6 +538,30 @@ async function executeRunner(parsed, env = process.env, signal) {
 */
 //#endregion
 //#region packages/cli/src/run-qoder.ts
+const RESULT_FILE_SUFFIX = ".result.json";
+function resultFileForPrompt(promptFile) {
+	return `${promptFile}${RESULT_FILE_SUFFIX}`;
+}
+async function removeStaleResult(resultFile) {
+	try {
+		await unlink(resultFile);
+	} catch (error) {
+		if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+	}
+}
+async function persistResult(resultFile, result) {
+	const temporaryFile = `${resultFile}.${process.pid}.${randomUUID()}.tmp`;
+	try {
+		await writeFile(temporaryFile, `${JSON.stringify(result.envelope)}\n`, {
+			encoding: "utf8",
+			mode: 384,
+			flag: "wx"
+		});
+		await rename(temporaryFile, resultFile);
+	} finally {
+		await unlink(temporaryFile).catch(() => void 0);
+	}
+}
 function parseRunnerArgs(argv) {
 	const values = {};
 	const options = /* @__PURE__ */ new Set([
@@ -603,10 +628,22 @@ async function main(argv = process.argv.slice(2)) {
 	process.once("SIGTERM", onSigterm);
 	try {
 		let result;
+		let resultFile;
 		try {
-			result = await executeRunner(parseRunnerArgs(argv), process.env, controller.signal);
+			const parsed = parseRunnerArgs(argv);
+			if (parsed.promptFile !== void 0 && isAbsolute(parsed.promptFile)) {
+				resultFile = resultFileForPrompt(parsed.promptFile);
+				await removeStaleResult(resultFile);
+			}
+			process.stderr.write("[run_qoder] running; wait for an explicit exit code and the final JSON envelope on stdout.\n");
+			result = await executeRunner(parsed, process.env, controller.signal);
 		} catch (error) {
 			result = createPreflightFailure(startedAt, null, null, error);
+		}
+		if (resultFile !== void 0) try {
+			await persistResult(resultFile, result);
+		} catch {
+			process.stderr.write("[run_qoder] result_file_error\n");
 		}
 		process.stdout.write(`${JSON.stringify(result.envelope)}\n`);
 		if (result.exitCode !== 0) process.stderr.write(`[run_qoder] ${result.envelope.error?.code ?? "failed"}\n`);
@@ -626,4 +663,4 @@ function isMainModule() {
 }
 if (isMainModule()) main();
 //#endregion
-export { main, parseRunnerArgs };
+export { RESULT_FILE_SUFFIX, main, parseRunnerArgs, resultFileForPrompt };

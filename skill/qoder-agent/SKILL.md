@@ -175,6 +175,15 @@ In Codex, submit this command with `sandbox_permissions:
 "require_escalated"`. Never use an escalation to add Qoder permission
 overrides, tool filters, or system-prompt overrides.
 
+The final envelope is emitted after Qoder exits and, with `--prompt-file`, is
+first saved as `<prompt-file>.result.json`. While no exit code is available,
+keep waiting on the same command session; empty stdout and worktree inspections
+are provisional. Allow the configured timeout plus termination grace. After
+both processes end, use the command envelope or the saved result. If neither
+exists, report the lost session, retain the worktree, and do not retry
+automatically. See [references/protocol.md](references/protocol.md) for the
+exact persistence and lifecycle contract.
+
 Optional configuration flags are `--qodercli-path`, `--model`, and
 `--timeout-ms`, and `--max-model-request-retries`. Their environment
 equivalents are `QODERCLI_PATH`, `QODER_MODEL`, `QODER_TIMEOUT_MS`, and

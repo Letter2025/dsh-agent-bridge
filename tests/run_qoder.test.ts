@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { spawnSync, type SpawnOptions } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -12,7 +12,7 @@ import {
   WINDOWS_COMMAND_LINE_LIMIT_UTF16,
   runQoder,
 } from "@qoder-agent-bridge/core";
-import { parseRunnerArgs } from "../packages/cli/src/run-qoder";
+import { parseRunnerArgs, resultFileForPrompt } from "../packages/cli/src/run-qoder";
 import {
   DEFAULT_MAX_MODEL_REQUEST_RETRIES,
   DEFAULT_TIMEOUT_MS,
@@ -732,6 +732,39 @@ describe("direct execution behavior", () => {
     expect(envelope).toMatchObject({ status: "failed", error: { code: "invalid_input" } });
   });
 
+  it("atomically persists the final envelope beside a prompt file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "qoder-result-file-test-"));
+    try {
+      const promptFile = join(root, "delegation-brief.md");
+      const resultFile = resultFileForPrompt(promptFile);
+      await writeFile(promptFile, "Report the bounded diagnostic result.", { mode: 0o600 });
+      await writeFile(resultFile, "stale result", { mode: 0o600 });
+
+      const executed = spawnSync(
+        process.execPath,
+        [
+          runnerPath,
+          "--cwd",
+          root,
+          "--prompt-file",
+          promptFile,
+          "--qodercli-path",
+          process.execPath,
+          "--timeout-ms",
+          "5000",
+        ],
+        { encoding: "utf8" },
+      );
+      const envelope = JSON.parse(executed.stdout.trim());
+      const persistedEnvelope = JSON.parse(await readFile(resultFile, "utf8"));
+
+      expect(persistedEnvelope).toEqual(envelope);
+      expect((await stat(resultFile)).mode & 0o777).toBe(0o600);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.runIf(process.platform === "win32")(
     "returns invalid_input before Qoder spawn when the Windows command line is too long",
     async () => {
@@ -809,8 +842,16 @@ describe("direct execution behavior", () => {
         );
         const envelope = JSON.parse(executed.stdout.trim());
         const qoderOutput = JSON.parse(envelope.qoderOutput.raw);
+        const resultFile = resultFileForPrompt(promptFile);
+        const persistedEnvelope = JSON.parse(await readFile(resultFile, "utf8"));
+        const resultFileMode = (await stat(resultFile)).mode & 0o777;
 
         expect(executed.status).toBe(0);
+        expect(executed.stderr).toContain(
+          "[run_qoder] running; wait for an explicit exit code and the final JSON envelope on stdout.",
+        );
+        expect(persistedEnvelope).toEqual(envelope);
+        expect(resultFileMode).toBe(0o600);
         expect(qoderOutput).toEqual({ hash: expectedHash });
         await expect(access(marker)).rejects.toThrow();
       } finally {

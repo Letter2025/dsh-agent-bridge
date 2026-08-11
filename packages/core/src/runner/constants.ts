@@ -1,4 +1,4 @@
-export const RUNNER_VERSION = "0.3.0";
+export const RUNNER_VERSION = "0.4.0";
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_TIMEOUT_MS = 300_000;
 export const MAX_TIMEOUT_MS = 1_800_000;

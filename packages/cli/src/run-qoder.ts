@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { rename, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PROMPT_LIMIT_BYTES,
@@ -11,6 +13,36 @@ import {
   type ParsedRunnerArgs,
   type RunnerExecution,
 } from "@qoder-agent-bridge/core";
+
+export const RESULT_FILE_SUFFIX = ".result.json";
+
+export function resultFileForPrompt(promptFile: string): string {
+  return `${promptFile}${RESULT_FILE_SUFFIX}`;
+}
+
+async function removeStaleResult(resultFile: string): Promise<void> {
+  try {
+    await unlink(resultFile);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+}
+
+async function persistResult(resultFile: string, result: RunnerExecution): Promise<void> {
+  const temporaryFile = `${resultFile}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryFile, `${JSON.stringify(result.envelope)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    await rename(temporaryFile, resultFile);
+  } finally {
+    await unlink(temporaryFile).catch(() => undefined);
+  }
+}
 
 export function parseRunnerArgs(argv: string[]): ParsedRunnerArgs {
   const values: Record<string, string | undefined> = {};
@@ -101,10 +133,26 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 
   try {
     let result: RunnerExecution;
+    let resultFile: string | undefined;
     try {
-      result = await executeRunner(parseRunnerArgs(argv), process.env, controller.signal);
+      const parsed = parseRunnerArgs(argv);
+      if (parsed.promptFile !== undefined && isAbsolute(parsed.promptFile)) {
+        resultFile = resultFileForPrompt(parsed.promptFile);
+        await removeStaleResult(resultFile);
+      }
+      process.stderr.write(
+        "[run_qoder] running; wait for an explicit exit code and the final JSON envelope on stdout.\n",
+      );
+      result = await executeRunner(parsed, process.env, controller.signal);
     } catch (error) {
       result = createPreflightFailure(startedAt, null, null, error);
+    }
+    if (resultFile !== undefined) {
+      try {
+        await persistResult(resultFile, result);
+      } catch {
+        process.stderr.write("[run_qoder] result_file_error\n");
+      }
     }
     process.stdout.write(`${JSON.stringify(result.envelope)}\n`);
     if (result.exitCode !== 0) {

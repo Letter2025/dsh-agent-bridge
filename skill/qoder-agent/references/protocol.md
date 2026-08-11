@@ -103,7 +103,7 @@ object on stdout:
 ```json
 {
   "protocolVersion": 1,
-  "runnerVersion": "0.3.0",
+  "runnerVersion": "0.4.0",
   "status": "succeeded",
   "cwd": "/absolute/project",
   "executable": "/absolute/path/to/qodercli",
@@ -155,6 +155,18 @@ automatically. The calling Codex session may inspect the raw payload and the
 actual project diff.
 
 ## Output, redaction, and lifecycle
+
+After parsing, the CLI writes a `running` diagnostic to stderr. It captures
+Qoder's streams and emits the envelope only after the child closes. For
+`--prompt-file`, it first atomically writes the same envelope to
+`<prompt-file>.result.json` with mode `0600`; any prior file at that path is
+removed before Qoder starts.
+
+Until an exit code is available, the caller must keep waiting on the same
+command session and treat empty stdout or worktree inspection as provisional.
+The wait budget covers the configured timeout plus the 2000 ms termination
+grace. After both processes end, a valid saved envelope recovers a lost command
+channel; if neither result exists, the execution result is unknown.
 
 Each stream keeps up to 256 KiB for return. When that capture limit is
 exceeded, the output keeps head and tail fragments and sets its truncation
