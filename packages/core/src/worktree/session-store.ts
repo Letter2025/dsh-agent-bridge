@@ -45,6 +45,8 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
     session.version !== WORKTREE_SESSION_VERSION ||
     !["prepared", "review_ready", "applied"].includes(session.phase ?? "") ||
     requiredStrings.some((value) => typeof value !== "string") ||
+    (session.reviewAttempt !== undefined &&
+      (!Number.isInteger(session.reviewAttempt) || session.reviewAttempt < 0)) ||
     (session.retryOf !== undefined &&
       session.retryOf !== null &&
       typeof session.retryOf !== "string")
@@ -80,7 +82,12 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
   assertInside(sessionRoot, baselinePatchPath);
   assertInside(sessionRoot, reviewPatchPath);
   assertInside(worktreeRoot, worktreeCwd);
-  return { ...validSession, retryOf: validSession.retryOf ?? null, statePath: resolvedState };
+  return {
+    ...validSession,
+    reviewAttempt: validSession.reviewAttempt ?? (validSession.phase === "review_ready" ? 1 : 0),
+    retryOf: validSession.retryOf ?? null,
+    statePath: resolvedState,
+  };
 }
 
 export async function sessionFileExists(statePath: string): Promise<boolean> {

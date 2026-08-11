@@ -19,8 +19,10 @@ native Codex subagent.
 - Keep prompts free of tokens, passwords, API keys, and other credentials.
 - Treat the returned envelope as execution evidence, not as a replacement for
   inspecting the actual diff and tests.
-- Stop on permission denial, authentication failure, timeout, non-zero exit, or
-  malformed/unsupported Qoder behavior. Do not retry with broader permissions.
+- Stop on Runner failure and do not retry automatically or with broader
+  permissions. After inspection and approval, continue trustworthy partial work
+  in the same prepared worktree; create a fresh linked retry only for a clean
+  restart or unsafe state.
 - Never ask Qoder to commit, push, publish, reset, clean, or edit outside the
   explicit task directory.
 

@@ -10,13 +10,14 @@ import {
   disposeWorktree,
   inspectWorktree,
   prepareWorktree,
+  reopenReviewWorktree,
 } from "@qoder-agent-bridge/core";
 
-export type WorktreeCommand = "prepare" | "inspect" | "diff" | "apply" | "dispose";
+export type WorktreeCommand = "prepare" | "inspect" | "diff" | "reopen" | "apply" | "dispose";
 
 export type ParsedWorktreeArgs =
   | { command: "prepare"; cwd: string; retryOf: string | undefined; discard: false }
-  | { command: "inspect" | "diff" | "apply"; state: string; discard: false }
+  | { command: "inspect" | "diff" | "reopen" | "apply"; state: string; discard: false }
   | { command: "dispose"; state: string; discard: boolean };
 
 interface WorktreeArgValues {
@@ -30,6 +31,7 @@ const WORKTREE_COMMANDS: readonly WorktreeCommand[] = [
   "prepare",
   "inspect",
   "diff",
+  "reopen",
   "apply",
   "dispose",
 ];
@@ -41,7 +43,10 @@ function isWorktreeCommand(value: string | undefined): value is WorktreeCommand 
 export function parseWorktreeArgs(argv: string[]): ParsedWorktreeArgs {
   const command = argv[0];
   if (!isWorktreeCommand(command)) {
-    throw new WorktreeError("invalid_input", "Use prepare, inspect, diff, apply, or dispose.");
+    throw new WorktreeError(
+      "invalid_input",
+      "Use prepare, inspect, diff, reopen, apply, or dispose.",
+    );
   }
 
   const values: WorktreeArgValues = { discard: false };
@@ -132,6 +137,7 @@ export async function executeWorktreeCommand(argv: string[]): Promise<Record<str
       hasChanges: result.hasChanges,
       changedFiles: result.changedFiles,
       indexModified: result.indexModified,
+      reviewAttempt: result.session.reviewAttempt,
     };
   }
   if (parsed.command === "diff") {
@@ -144,6 +150,21 @@ export async function executeWorktreeCommand(argv: string[]): Promise<Record<str
       patchPath: result.session.reviewPatchPath,
       baselineTree: result.session.baselineTree,
       changedFiles: result.changedFiles,
+      reviewAttempt: result.session.reviewAttempt,
+    };
+  }
+  if (parsed.command === "reopen") {
+    const result = await reopenReviewWorktree(parsed.state);
+    return {
+      status: "succeeded",
+      operation: "reopen",
+      phase: result.session.phase,
+      statePath: result.session.statePath,
+      qoderCwd: result.session.worktreeCwd,
+      archivedPatchPath: result.archivedPatchPath,
+      changedFiles: result.changedFiles,
+      indexModified: false,
+      reviewAttempt: result.session.reviewAttempt,
     };
   }
   if (parsed.command === "apply") {

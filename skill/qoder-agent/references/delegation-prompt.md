@@ -141,11 +141,14 @@ brief that preserves the complete original objective, required context,
 compiled rules, scope, acceptance criteria, verification, assumptions, and
 stop conditions. Add the concrete review findings and direct Qoder to implement
 the whole task with those defects corrected. Do not write a findings-only brief:
-the new review worktree starts from the source baseline and does not contain the
-rejected candidate. Reapply Brief Review; a precise correction does not by
-itself elevate `auto` risk.
+the reopened review worktree retains the complete rejected candidate, while the
+Runner still receives no persistent session memory. Tell Qoder to continue from
+and repair the existing uncommitted changes. Reapply Brief Review; a precise
+correction does not by itself elevate `auto` risk.
 
-For the single allowed model-queue continuation, reissue the original brief in
-the same worktree, preserve its context and constraints, and change only the
-objective to continue from and repair the existing uncommitted changes. Never
-rely on prior session memory because the Runner disables session persistence.
+For an explicitly approved failed-Runner continuation, reissue the original
+brief in the same worktree, preserve its context and constraints, and change
+only the objective to continue from and repair the existing uncommitted
+changes. Never rely on prior session memory because the Runner disables session
+persistence. The exact `model_queue_exhausted` recovery remains limited to one
+continuation.

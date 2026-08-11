@@ -36,7 +36,8 @@ Skill 的需求、使用约束和审阅语义，这些结论将作为后续 MCP 
   不把 brief 插值进 shell 命令。
 - 提供结构化结果 envelope、有界模型重试和输出、脱敏、超时、信号处理以及按平台
   终止进程树。
-- 提供有边界的模型队列恢复和关联 retry session 清理，不依赖 Qoder 持久会话。
+- 支持审查失败后原 worktree 修正、可信 Runner 失败原地恢复，以及关联 clean-restart
+  session 清理，不依赖 Qoder 持久会话。
 
 ## 注意事项
 
@@ -48,8 +49,9 @@ Skill 的需求、使用约束和审阅语义，这些结论将作为后续 MCP 
   brief，不能为了让 Qoder 读取而扩大其可写范围。
 - brief 审批只授权执行一次 Qoder 任务；把审阅后的 patch 应用到源 worktree 始终
   需要另一次明确批准。
-- 本机必须已具备 Qoder 登录状态以及任务所需的 host/network 条件。遇到权限拒绝、
-  认证失败、超时、输出异常或非零退出时应停止，不能扩大权限后重试。
+- 本机必须已具备 Qoder 登录状态以及任务所需的 host/network 条件。执行失败时先停止，
+  不得自动重试或扩大权限；外部条件修复并获得批准后，可信半成品应在原 prepared
+  worktree 中继续。
 - 不要在委派 brief 中加入凭证或秘密。生成的 brief 必须通过非 shell 文件写入工具
   创建，并使用 `--prompt-file` 传递。
 - prompt 内容上限为 64 KiB；Windows 还可能因完整 `CreateProcessW` 命令行限制而
@@ -118,9 +120,11 @@ non-ignored 的源码状态；`node_modules` 等 ignored 依赖不会被复制�
 Git index，应用成功后会自动删除临时 worktree 和 session。应用失败时会保留
 session 供排查；如果 patch 已应用但清理失败，可重试
 `dispose --state <statePath>`。只有放弃未应用的 session 时才使用
-`dispose --state <statePath> --discard`。如果要基于失败 session 发起新的尝试，
-在 `prepare` 时传入 `--retry-of <previous-statePath>`。新尝试成功 apply 后会删除
-当前 session 及其关联的前置 session；新尝试失败时则保留整条链。
+`dispose --state <statePath> --discard`。审查候选被拒绝时使用
+`reopen --state <statePath>`，它会归档旧 patch 并保留完整 working tree 供后续修正。
+可信 Runner 失败经检查和明确批准后也继续使用原 prepared worktree。只有明确要求
+clean restart 或原 session 不可安全复用时，才在 `prepare` 中传入
+`--retry-of <previous-statePath>`；成功 apply 后会清理关联 session 链。
 
 ## 开发检查
 

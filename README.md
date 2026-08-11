@@ -43,8 +43,8 @@ semantics; those findings will shape any later MCP design.
   interpolation of generated or multiline briefs.
 - Structured result envelopes, bounded retries and output capture, redaction,
   timeouts, signal handling, and platform-specific process-tree termination.
-- Bounded model-queue recovery and linked retry-session cleanup without relying
-  on persistent Qoder sessions.
+- In-place review correction, trustworthy failed-Runner recovery, and linked
+  clean-restart cleanup without relying on persistent Qoder sessions.
 
 ## Important notes
 
@@ -59,8 +59,9 @@ semantics; those findings will shape any later MCP design.
 - Brief approval authorizes one Qoder execution only. Applying the reviewed
   patch to the source worktree always requires separate explicit approval.
 - Qoder authentication and any required host/network access must already be
-  available locally. Stop on denial, authentication failure, timeout, malformed
-  output, or non-zero exit; never retry with broader permissions.
+  available locally. Stop on execution failure and never retry automatically or
+  with broader permissions. After approval, continue trustworthy partial work
+  in the same prepared worktree once external prerequisites are resolved.
 - Never place credentials or secrets in a delegation brief. Write generated
   briefs with a non-shell file-writing tool and pass them with `--prompt-file`.
 - The prompt content limit is 64 KiB, but Windows can have a lower effective
@@ -140,10 +141,12 @@ source, then automatically removes the temporary worktree and session. If
 application fails, the session is retained for diagnosis; if cleanup fails
 after application, retry `dispose --state <statePath>`. Use
 `dispose --state <statePath> --discard` only to discard an unapplied session.
-When starting a new attempt after a failed session, pass
-`--retry-of <previous-statePath>` to `prepare`. A successful apply then removes
-the new session and its linked predecessor sessions; a failed retry retains the
-whole chain.
+Use `reopen --state <statePath>` for a rejected review candidate; it archives
+the old patch and preserves the complete working tree for correction. A
+trustworthy failed Runner also continues in the same prepared worktree after
+inspection and explicit approval. Use `prepare --retry-of
+<previous-statePath>` only for a clean restart or an unsafe-to-reuse session. A
+successful apply then removes the new session and its linked predecessors.
 
 ## Development checks
 

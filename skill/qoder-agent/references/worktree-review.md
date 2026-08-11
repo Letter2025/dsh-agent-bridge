@@ -11,9 +11,10 @@ not invoke Qoder; Qoder must still run only through `run_qoder.mjs`.
    `HEAD`, mirrors source tracked changes and non-ignored untracked files, then
    stages that copied state only in the temporary worktree as Qoder's baseline.
    Ignored dependencies such as `node_modules` are not copied, linked, or
-   installed. When starting a new attempt after a failed session, add
-   `--retry-of <previous-statePath>`; the predecessor must belong to the same
-   source worktree.
+   installed. Reuse a trustworthy existing session for review corrections and
+   failed-Runner recovery. Use `--retry-of <previous-statePath>` only for an
+   explicitly requested clean restart or when the predecessor cannot be safely
+   continued; it must belong to the same source worktree.
 3. Run the Runner with `--cwd <qoderCwd>`. Qoder must not change the temporary
    Git index or worktree setup.
 4. If inspection is needed before review, run `qoder_worktree.mjs inspect
@@ -49,24 +50,28 @@ grant reusable arbitrary shell or Node access.
 The original task authorizes at most two automatic correction runs after the
 initial successful Runner execution when independent review finds only
 concrete, verifiable, in-scope defects. Do not ask for conversational approval
-solely to start such a run. Prepare a new session with the rejected session as
-`--retry-of`, and reissue the complete original task plus the review findings;
-the new worktree starts from the source baseline rather than the rejected
-candidate. Generate and independently review its new patch. A later successful
-apply cleans the linked rejected sessions.
+solely to start such a run. Run `qoder_worktree.mjs reopen --state <statePath>`.
+It verifies the reviewed state, archives the rejected patch as
+`qoder-only.attempt-<n>.patch`, restores only the temporary index to the source
+baseline, and returns the same `qoderCwd` with all candidate files intact.
+Reissue the complete original task plus review findings in a distinct brief,
+then generate and independently review the new complete patch.
 
 Stop without correction when the finding requires a material user decision,
 scope expansion, or a third correction run. Runner failures follow the normal
 failure rules, not this review-correction lifecycle. Final patch application
 always requires explicit user approval.
 
-## Queue Recovery
+## Failed-Runner Recovery
 
-When the Runner returns `model_queue_exhausted`, inspect the prepared session
-without generating its review patch. After explicit user approval, allow one
-continuation in the same `qoderCwd` with the original task restated and a
-direction to repair existing edits. Do not create a new worktree or baseline,
-and do not apply this exception to any other failure.
+After any Runner execution failure, wait until Runner and Qoder have ended and
+inspect the prepared session without generating its review patch. If the index
+is unchanged, every edit is explainable and in scope, and the original task and
+baseline still apply, an explicitly approved continuation must use the same
+`qoderCwd` and preserve its partial work. Resolve external prerequisites first,
+use a distinct recovery brief, and stop if the same hard failure repeats. For
+the exact retryable `model_queue_exhausted` code, allow at most one recovery.
+Do not broaden permissions or retry automatically.
 
 ## Stop Conditions
 
@@ -75,7 +80,9 @@ Stop rather than bypassing a condition when:
 - the source is not a Git worktree, has no `HEAD` commit, or has unmerged
   paths;
 - the task needs ignored artifacts that the coordinator does not mirror;
-- the Runner reports a failure or Qoder changes the temporary Git index;
+- the Runner reports a failure whose processes are still live, state cannot be
+  explained, or temporary Git index was changed;
+- `reopen` detects that a reviewed worktree drifted after patch generation;
 - the review patch is empty but Qoder claims code changes;
 - source changes make `apply --check` fail;
 - the patch is applied but automatic worktree cleanup fails.

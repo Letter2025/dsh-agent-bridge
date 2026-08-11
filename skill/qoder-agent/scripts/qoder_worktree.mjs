@@ -170,7 +170,7 @@ async function readSession(statePath) {
 		"prepared",
 		"review_ready",
 		"applied"
-	].includes(session.phase ?? "") || requiredStrings.some((value) => typeof value !== "string") || session.retryOf !== void 0 && session.retryOf !== null && typeof session.retryOf !== "string") throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+	].includes(session.phase ?? "") || requiredStrings.some((value) => typeof value !== "string") || session.reviewAttempt !== void 0 && (!Number.isInteger(session.reviewAttempt) || session.reviewAttempt < 0) || session.retryOf !== void 0 && session.retryOf !== null && typeof session.retryOf !== "string") throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
 	if (typeof session.retryOf === "string") requireAbsolute(session.retryOf, "retryOf");
 	const validSession = session;
 	const storedSessionRoot = resolve(validSession.sessionRoot);
@@ -196,6 +196,7 @@ async function readSession(statePath) {
 	assertInside(worktreeRoot, worktreeCwd);
 	return {
 		...validSession,
+		reviewAttempt: validSession.reviewAttempt ?? (validSession.phase === "review_ready" ? 1 : 0),
 		retryOf: validSession.retryOf ?? null,
 		statePath: resolvedState
 	};
@@ -328,6 +329,7 @@ async function prepareWorktree(cwd, retryOf = void 0) {
 			baselineTree,
 			baselinePatchPath,
 			reviewPatchPath,
+			reviewAttempt: 0,
 			retryOf: retrySession?.statePath ?? null
 		};
 		await writeSession(session);
@@ -388,11 +390,56 @@ async function createReviewPatch(statePath) {
 		"--cached",
 		session.baselineTree
 	])).split("\n").filter((path) => path !== "");
+	session.reviewAttempt += 1;
 	session.phase = "review_ready";
 	await writeSession(session);
 	return {
 		session,
 		changedFiles
+	};
+}
+async function reopenReviewWorktree(statePath) {
+	const session = await readSession(statePath);
+	if (session.phase !== "review_ready") throw new WorktreeError("invalid_state", "Only a review-ready session can be reopened for correction.");
+	const savedPatch = await readFile(session.reviewPatchPath, "utf8").catch(() => {
+		throw new WorktreeError("invalid_state", "The reviewed patch is missing or unreadable.");
+	});
+	const currentPatch = await runGit(session.worktreeRoot, [
+		"diff",
+		"--binary",
+		"--cached",
+		session.baselineTree
+	]);
+	const unstaged = await runGit(session.worktreeRoot, [
+		"diff",
+		"--name-only",
+		"-z"
+	]);
+	const untracked = await listUntrackedFiles(session.worktreeRoot);
+	if (currentPatch !== savedPatch || unstaged !== "" || untracked.length > 0) throw new WorktreeError("review_state_changed", "The reviewed worktree changed after patch generation; keep it for diagnosis.");
+	const reviewedIndexTree = (await runGit(session.worktreeRoot, ["write-tree"])).trim();
+	const archivedPatchPath = join(session.sessionRoot, `qoder-only.attempt-${session.reviewAttempt}.patch`);
+	try {
+		await copyFile(session.reviewPatchPath, archivedPatchPath, constants.COPYFILE_EXCL);
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+			if (await readFile(archivedPatchPath, "utf8").catch(() => "") !== savedPatch) throw new WorktreeError("invalid_state", "The review patch archive conflicts with this attempt.");
+		} else throw new WorktreeError("internal_error", "The reviewed patch could not be archived.");
+	}
+	await runGit(session.worktreeRoot, ["read-tree", session.baselineTree]);
+	session.phase = "prepared";
+	try {
+		await writeSession(session);
+	} catch {
+		await runGit(session.worktreeRoot, ["read-tree", reviewedIndexTree]).catch(() => void 0);
+		throw new WorktreeError("internal_error", "The reopened session state could not be saved.");
+	}
+	const inspection = await inspectWorktree(session.statePath);
+	if (inspection.indexModified) throw new WorktreeError("git_index_modified", "The worktree index could not be restored to its source baseline.");
+	return {
+		session: inspection.session,
+		archivedPatchPath,
+		changedFiles: inspection.changedFiles
 	};
 }
 /**
@@ -447,6 +494,7 @@ const WORKTREE_COMMANDS = [
 	"prepare",
 	"inspect",
 	"diff",
+	"reopen",
 	"apply",
 	"dispose"
 ];
@@ -455,7 +503,7 @@ function isWorktreeCommand(value) {
 }
 function parseWorktreeArgs(argv) {
 	const command = argv[0];
-	if (!isWorktreeCommand(command)) throw new WorktreeError("invalid_input", "Use prepare, inspect, diff, apply, or dispose.");
+	if (!isWorktreeCommand(command)) throw new WorktreeError("invalid_input", "Use prepare, inspect, diff, reopen, apply, or dispose.");
 	const values = { discard: false };
 	for (let index = 1; index < argv.length; index += 1) {
 		const option = argv[index];
@@ -523,7 +571,8 @@ async function executeWorktreeCommand(argv) {
 			qoderCwd: result.session.worktreeCwd,
 			hasChanges: result.hasChanges,
 			changedFiles: result.changedFiles,
-			indexModified: result.indexModified
+			indexModified: result.indexModified,
+			reviewAttempt: result.session.reviewAttempt
 		};
 	}
 	if (parsed.command === "diff") {
@@ -535,7 +584,22 @@ async function executeWorktreeCommand(argv) {
 			worktreeRoot: result.session.worktreeRoot,
 			patchPath: result.session.reviewPatchPath,
 			baselineTree: result.session.baselineTree,
-			changedFiles: result.changedFiles
+			changedFiles: result.changedFiles,
+			reviewAttempt: result.session.reviewAttempt
+		};
+	}
+	if (parsed.command === "reopen") {
+		const result = await reopenReviewWorktree(parsed.state);
+		return {
+			status: "succeeded",
+			operation: "reopen",
+			phase: result.session.phase,
+			statePath: result.session.statePath,
+			qoderCwd: result.session.worktreeCwd,
+			archivedPatchPath: result.archivedPatchPath,
+			changedFiles: result.changedFiles,
+			indexModified: false,
+			reviewAttempt: result.session.reviewAttempt
 		};
 	}
 	if (parsed.command === "apply") return {

@@ -27,5 +27,6 @@ export interface WorktreeSession {
   baselineTree: string;
   baselinePatchPath: string;
   reviewPatchPath: string;
+  reviewAttempt: number;
   retryOf: string | null;
 }

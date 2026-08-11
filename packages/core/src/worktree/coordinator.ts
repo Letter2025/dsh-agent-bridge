@@ -1,6 +1,7 @@
 // Isolated Git worktree lifecycle service. CLI concerns live in packages/cli.
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { runGit } from "./git-client";
@@ -151,6 +152,7 @@ export async function prepareWorktree(
       baselineTree,
       baselinePatchPath,
       reviewPatchPath,
+      reviewAttempt: 0,
       retryOf: retrySession?.statePath ?? null,
     };
     await writeSession(session);
@@ -247,9 +249,90 @@ export async function createReviewPatch(statePath: string): Promise<ReviewPatch>
   )
     .split("\n")
     .filter((path) => path !== "");
+  session.reviewAttempt += 1;
   session.phase = "review_ready";
   await writeSession(session);
   return { session, changedFiles };
+}
+
+/**
+ * Reopen a reviewed candidate for an in-place correction. The reviewed patch
+ * is archived, the index returns to the original source baseline, and the
+ * working tree keeps the complete rejected candidate for the next Qoder run.
+ *
+ * @param {string} statePath
+ * @returns {Promise<ReopenedReview>}
+ */
+export interface ReopenedReview {
+  session: WorktreeSession;
+  archivedPatchPath: string;
+  changedFiles: string[];
+}
+
+export async function reopenReviewWorktree(statePath: string): Promise<ReopenedReview> {
+  const session = await readSession(statePath);
+  if (session.phase !== "review_ready") {
+    throw new WorktreeError(
+      "invalid_state",
+      "Only a review-ready session can be reopened for correction.",
+    );
+  }
+
+  const savedPatch = await readFile(session.reviewPatchPath, "utf8").catch(() => {
+    throw new WorktreeError("invalid_state", "The reviewed patch is missing or unreadable.");
+  });
+  const currentPatch = await runGit(session.worktreeRoot, [
+    "diff",
+    "--binary",
+    "--cached",
+    session.baselineTree,
+  ]);
+  const unstaged = await runGit(session.worktreeRoot, ["diff", "--name-only", "-z"]);
+  const untracked = await listUntrackedFiles(session.worktreeRoot);
+  if (currentPatch !== savedPatch || unstaged !== "" || untracked.length > 0) {
+    throw new WorktreeError(
+      "review_state_changed",
+      "The reviewed worktree changed after patch generation; keep it for diagnosis.",
+    );
+  }
+  const reviewedIndexTree = (await runGit(session.worktreeRoot, ["write-tree"])).trim();
+
+  const archivedPatchPath = join(
+    session.sessionRoot,
+    `qoder-only.attempt-${session.reviewAttempt}.patch`,
+  );
+  try {
+    await copyFile(session.reviewPatchPath, archivedPatchPath, fsConstants.COPYFILE_EXCL);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+      const archivedPatch = await readFile(archivedPatchPath, "utf8").catch(() => "");
+      if (archivedPatch !== savedPatch) {
+        throw new WorktreeError(
+          "invalid_state",
+          "The review patch archive conflicts with this attempt.",
+        );
+      }
+    } else {
+      throw new WorktreeError("internal_error", "The reviewed patch could not be archived.");
+    }
+  }
+
+  await runGit(session.worktreeRoot, ["read-tree", session.baselineTree]);
+  session.phase = "prepared";
+  try {
+    await writeSession(session);
+  } catch {
+    await runGit(session.worktreeRoot, ["read-tree", reviewedIndexTree]).catch(() => undefined);
+    throw new WorktreeError("internal_error", "The reopened session state could not be saved.");
+  }
+  const inspection = await inspectWorktree(session.statePath);
+  if (inspection.indexModified) {
+    throw new WorktreeError(
+      "git_index_modified",
+      "The worktree index could not be restored to its source baseline.",
+    );
+  }
+  return { session: inspection.session, archivedPatchPath, changedFiles: inspection.changedFiles };
 }
 
 /**

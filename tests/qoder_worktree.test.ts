@@ -10,6 +10,7 @@ import {
   disposeWorktree,
   inspectWorktree,
   prepareWorktree,
+  reopenReviewWorktree,
 } from "@qoder-agent-bridge/core";
 import { executeWorktreeCommand, parseWorktreeArgs } from "../packages/cli/src/qoder-worktree";
 
@@ -62,6 +63,7 @@ describe("Qoder isolated worktree coordinator", () => {
       /diff requires/,
     );
     expect(() => parseWorktreeArgs(["inspect", "--state", "/tmp/session.json"])).not.toThrow();
+    expect(() => parseWorktreeArgs(["reopen", "--state", "/tmp/session.json"])).not.toThrow();
     expect(() =>
       parseWorktreeArgs(["dispose", "--state", "/tmp/session.json", "--discard"]),
     ).not.toThrow();
@@ -136,6 +138,91 @@ describe("Qoder isolated worktree coordinator", () => {
     await disposeWorktree(session.statePath, true);
     expect(await pathExists(session.worktreeRoot)).toBe(false);
     expect(await pathExists(session.sessionRoot)).toBe(false);
+  });
+
+  it("reopens a rejected candidate in place and applies the corrected complete result", async () => {
+    const root = await createFixture();
+    const session = await prepareWorktree(root);
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "accepted first-pass work\n");
+    await writeFile(join(session.worktreeRoot, "qoder-new.txt"), "broken first pass\n");
+    const firstReview = await createReviewPatch(session.statePath);
+    const firstPatch = await readFile(firstReview.session.reviewPatchPath, "utf8");
+
+    const reopened = await executeWorktreeCommand(["reopen", "--state", session.statePath]);
+    expect(reopened).toMatchObject({
+      status: "succeeded",
+      operation: "reopen",
+      phase: "prepared",
+      statePath: await realpath(session.statePath),
+      qoderCwd: session.worktreeCwd,
+      changedFiles: ["qoder-new.txt", "tracked.txt"],
+      indexModified: false,
+      reviewAttempt: 1,
+    });
+    expect(await readFile(join(session.worktreeRoot, "tracked.txt"), "utf8")).toBe(
+      "accepted first-pass work\n",
+    );
+    expect(await readFile(join(session.worktreeRoot, "qoder-new.txt"), "utf8")).toBe(
+      "broken first pass\n",
+    );
+    expect(await readFile(String(reopened.archivedPatchPath), "utf8")).toBe(firstPatch);
+    await expect(inspectWorktree(session.statePath)).resolves.toMatchObject({
+      indexModified: false,
+      session: { phase: "prepared", reviewAttempt: 1 },
+    });
+
+    await writeFile(join(session.worktreeRoot, "qoder-new.txt"), "fixed second pass\n");
+    const secondReview = await createReviewPatch(session.statePath);
+    expect(secondReview.session.reviewAttempt).toBe(2);
+    const finalPatch = await readFile(session.reviewPatchPath, "utf8");
+    expect(finalPatch).toContain("accepted first-pass work");
+    expect(finalPatch).toContain("fixed second pass");
+
+    await applyReviewPatch(session.statePath);
+    expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("accepted first-pass work\n");
+    expect(await readFile(join(root, "qoder-new.txt"), "utf8")).toBe("fixed second pass\n");
+  });
+
+  it("refuses to reopen a reviewed worktree that drifted after patch generation", async () => {
+    const root = await createFixture();
+    const session = await prepareWorktree(root);
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "reviewed candidate\n");
+    await createReviewPatch(session.statePath);
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "post-review drift\n");
+
+    await expect(reopenReviewWorktree(session.statePath)).rejects.toMatchObject({
+      code: "review_state_changed",
+    });
+    await expect(inspectWorktree(session.statePath)).resolves.toMatchObject({
+      session: { phase: "review_ready", reviewAttempt: 1 },
+    });
+    expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("base\n");
+
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it("continues a trustworthy failed Runner attempt in the same prepared worktree", async () => {
+    const root = await createFixture();
+    const session = await prepareWorktree(root);
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "partial failed-run work\n");
+
+    const failedRunInspection = await executeWorktreeCommand([
+      "inspect",
+      "--state",
+      session.statePath,
+    ]);
+    expect(failedRunInspection).toMatchObject({
+      phase: "prepared",
+      qoderCwd: session.worktreeCwd,
+      hasChanges: true,
+      changedFiles: ["tracked.txt"],
+      indexModified: false,
+    });
+
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "completed recovery work\n");
+    await createReviewPatch(session.statePath);
+    await applyReviewPatch(session.statePath);
+    expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("completed recovery work\n");
   });
 
   it("disposes a linked retry chain after the newest session applies", async () => {

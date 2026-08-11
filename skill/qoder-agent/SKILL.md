@@ -42,8 +42,9 @@ node /path/to/qoder-agent/scripts/qoder_worktree.mjs prepare \
   --cwd /absolute/path/to/task-scope
 ```
 
-When starting a fresh retry after a failed session, pass the failed session's
-state file explicitly:
+Create a fresh retry worktree only when the existing session cannot be safely
+continued or the user explicitly requests a clean restart. Link that new
+worktree to the retained predecessor:
 
 ```sh
 node /path/to/qoder-agent/scripts/qoder_worktree.mjs prepare \
@@ -51,10 +52,11 @@ node /path/to/qoder-agent/scripts/qoder_worktree.mjs prepare \
   --retry-of /absolute/path/from-previous-session/session.json
 ```
 
-The retry session must belong to the same source worktree. If the retry later
-applies successfully, the coordinator disposes the new session and all linked
-predecessor sessions. If the retry fails, the entire linked chain remains
-available for diagnosis.
+The retry session must belong to the same source worktree. Do not use
+`--retry-of` for an ordinary review correction or a trustworthy Runner failure;
+both continue in the existing worktree. If a fresh retry later applies
+successfully, the coordinator disposes it and all linked predecessors. If it
+fails, the entire linked chain remains available for diagnosis.
 
 Read the JSON response and invoke the Runner with `qoderCwd`, not the source
 directory. Before invoking it, compile the delegation brief described below.
@@ -80,6 +82,19 @@ the limitation and obtain an explicit alternate workflow; do not silently run
 Qoder in the source directory. Read
 [references/worktree-review.md](references/worktree-review.md) before using
 this workflow.
+
+If independent review rejects a concrete in-scope candidate, reopen that exact
+session before the bounded correction run:
+
+```sh
+node /path/to/qoder-agent/scripts/qoder_worktree.mjs reopen \
+  --state /absolute/path/from-prepare/session.json
+```
+
+`reopen` archives the rejected patch, restores only the temporary Git index to
+the original baseline, and keeps every working-tree change for Qoder to repair.
+It fails if the reviewed state drifted after patch generation. Use the returned
+same `qoderCwd`; never prepare a new worktree for this correction.
 
 ## Build the Delegation Brief
 
@@ -234,47 +249,61 @@ guesses a user-home installation path.
    application. If its preflight detects a conflict, report it and leave the
    source and temporary worktree untouched.
 6. If the result reports permission denial, authentication failure, timeout,
-   non-zero exit, output-limit termination, cleanup failure, or another
-   failure, stop and report the envelope to the main Codex session. Do not
-   retry automatically. Keep the temporary worktree until the user explicitly
-   asks to discard it. If a new attempt is approved, create its worktree with
-   `--retry-of <statePath>` so a later successful apply can clean the linked
-   chain. For a patch that was applied but whose cleanup failed, retry
-   `dispose` directly. Apply only the narrow model-queue recovery below.
+   interruption, non-zero exit, output-limit termination, a lost command
+   channel, or another execution failure, stop and report the envelope. Do not
+   retry automatically. After both Runner and Qoder have ended, inspect the
+   existing session. If it remains `prepared`, its index is unchanged, its
+   changes are explainable and in scope, and the original task still applies,
+   an explicitly approved recovery must reuse that same `statePath` and
+   `qoderCwd`. Follow the failed-Runner recovery below. Prepare a linked fresh
+   retry only when reuse is unsafe or the user requests a clean restart. For a
+   patch that was applied but whose cleanup failed, retry `dispose` directly.
 7. After a successful Runner execution whose candidate fails independent
    review, automatically issue at most two correction tasks when every finding
    is concrete, verifiable, and inside the original objective, scope, and
    acceptance criteria. The original task authorization covers these runs; an
    "explicit correction task" means a new bounded brief, not new conversational
-   approval. Preserve the full original task and add the review findings; a new
-   worktree does not contain the prior candidate. Reapply Brief Review: under
-   `auto`, a precise in-scope correction does not itself require a preview;
-   `required` still does. Create each correction session with `--retry-of` the
-   rejected session, rerun independent review, and count no more than two
-   correction runs after the initial attempt. Stop and report retained sessions
-   if the correction needs a material decision or scope expansion, exhausts the
-   limit, or still fails. Never apply an unaccepted candidate.
+   approval. Preserve the full original task and add the review findings.
+   Invoke `reopen --state <statePath>`, then rerun Qoder in its returned same
+   `qoderCwd` so the correction inherits the complete rejected candidate.
+   Store each correction brief under a distinct filename beside the session
+   state so its `.result.json` does not overwrite prior evidence. Reapply Brief
+   Review: under `auto`, a precise in-scope correction does not itself require a
+   preview; `required` still does. Rerun independent review and count no more
+   than two correction runs after the initial attempt. Stop and retain the
+   session if `reopen` detects drift, the correction needs a material decision
+   or scope expansion, exhausts the limit, or still fails. Never apply an
+   unaccepted candidate.
 
-## Recover a Model Queue Failure
+## Recover a Failed Runner
 
-Treat only `error.code: model_queue_exhausted` with `retryable: true` as a
-recoverable queue failure. Do not generalize from other gateway, provider, or
-queue text.
+Reuse trustworthy partial work after a Runner failure; do not replace it with a
+fresh baseline merely because the Runner did not succeed. Recovery never
+broadens permissions or scope and still requires explicit approval. Treat only
+`error.code: model_queue_exhausted` with `retryable: true` as the specific model
+queue case, and allow at most one recovery for it. Do not generalize from other
+gateway, provider, or queue text.
 
 1. Run `qoder_worktree.mjs inspect --state <statePath>`. Do not run `diff`,
    `apply`, or `dispose`; `diff` stages files and advances the session.
-2. Report the candidate files, `indexModified`, and retained worktree. If
-   `indexModified` is true, stop because Qoder violated the index boundary.
-3. Obtain explicit approval for one recovery continuation. Never retry
-   automatically or more than once.
+2. Confirm the original Runner and Qoder processes have ended. Report the
+   phase, candidate files, `indexModified`, and retained worktree. Continue only
+   when the phase is `prepared`, `indexModified` is false, all changes are
+   explainable and in scope, and the original task and baseline remain valid.
+   Otherwise stop and retain the session.
+3. Obtain explicit approval before continuing any failed execution. Never
+   retry automatically. Resolve authentication, executable, permission, or
+   other external prerequisites before reissuing the Runner, and stop when the
+   same hard failure repeats.
 4. Re-run the Runner in the same `qoderCwd` and same prepared worktree. Reissue
    the original delegation brief with an objective that instructs Qoder to
    inspect and repair existing uncommitted changes rather than restart from
    scratch. Preserve its required context, compiled rules, scope, acceptance
-   criteria, and checks.
+   criteria, and checks. Use a distinct recovery brief filename so prior Runner
+   evidence remains available.
 5. After success, continue the original `diff`, independent checks, review, and
-   apply flow. Do not create a new review session for queue recovery; doing so
-   could turn the interrupted edits into an excluded baseline.
+   apply flow. Do not create a new worktree for a trustworthy recovery; doing so
+   would discard the interrupted edits.
 
 Use this recovery objective inside the reissued delegation brief:
 
