@@ -164,6 +164,14 @@ removed before Qoder starts.
 
 Until an exit code is available, the caller must keep waiting on the same
 command session and treat empty stdout or worktree inspection as provisional.
+When supported by the terminal tool, the Skill requests an initial yield of at
+most 30000 ms and then empty stdin waits with `yield_time_ms: 180000` on that
+same session. Each value is a maximum wait: output or process exit returns
+control immediately. A caller should issue another wait only when the prior
+one returns without an exit code, and should not add higher-frequency polling.
+Unsupported yield controls fall back to the terminal tool's defaults without
+changing the Runner protocol.
+
 The wait budget covers the configured timeout plus the 2000 ms termination
 grace. After both processes end, a valid saved envelope recovers a lost command
 channel; if neither result exists, the execution result is unknown.

@@ -182,13 +182,22 @@ requirement: submit the exact escalated command when needed and let the command
 approval mechanism handle it.
 
 The final envelope is emitted after Qoder exits and, with `--prompt-file`, is
-first saved as `<prompt-file>.result.json`. While no exit code is available,
-keep waiting on the same command session; empty stdout and worktree inspections
-are provisional. Allow the configured timeout plus termination grace. After
-both processes end, use the command envelope or the saved result. If neither
-exists, report the lost session, retain the worktree, and do not retry
-automatically. See [references/protocol.md](references/protocol.md) for the
-exact persistence and lifecycle contract.
+first saved as `<prompt-file>.result.json`. When the terminal tool supports a
+configurable yield, request at most 30000 ms for the initial Runner command. If
+it yields a live command session without an exit code, continue that same
+session with an empty stdin write and request `yield_time_ms: 180000`. Repeat
+only after that wait returns without an exit code; do not poll more frequently.
+The three-minute value is a maximum wait, not a fixed delay: process output or
+exit returns control early. If the terminal tool does not expose or rejects
+these yield values, omit them and use its defaults rather than treating that as
+a Runner failure.
+
+Until an exit code is available, empty stdout and worktree inspections are
+provisional. Allow the configured timeout plus termination grace. After both
+processes end, use the command envelope or the saved result. If neither exists,
+report the lost session, retain the worktree, and do not retry automatically.
+See [references/protocol.md](references/protocol.md) for the exact persistence
+and lifecycle contract.
 
 Optional configuration flags are `--qodercli-path`, `--model`, and
 `--timeout-ms`, and `--max-model-request-retries`. Their environment
