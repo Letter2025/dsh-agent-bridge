@@ -108,7 +108,9 @@ Runner 始终使用 `permission-mode auto`、JSON 输出、禁用会话持久化
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) 了解 Codex 协作
 流程，阅读
 [skill/qoder-agent/references/delegation-prompt.md](skill/qoder-agent/references/delegation-prompt.md)
-了解由 Codex 编译上下文的 `Qoder Delegation Brief v1`，并阅读
+了解由 Codex 编译上下文的 `Qoder Delegation Brief v1`，阅读
+[skill/qoder-agent/references/worktree-review.md](skill/qoder-agent/references/worktree-review.md)
+了解隔离审查、修正、恢复和应用生命周期，并阅读
 [skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
 了解结果 envelope。
 

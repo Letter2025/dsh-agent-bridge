@@ -57,7 +57,13 @@ It verifies the reviewed state, archives the rejected patch as
 `qoder-only.attempt-<n>.patch`, restores only the temporary index to the source
 baseline, and returns the same `qoderCwd` with all candidate files intact.
 Reissue the complete original task plus review findings in a distinct brief,
-then generate and independently review the new complete patch.
+then generate and independently review the new complete patch. Preserve the
+complete objective, required context, compiled rules, scope, acceptance
+criteria, verification, assumptions, and stop conditions. Direct Qoder to
+inspect and repair the existing uncommitted changes; never send a findings-only
+brief or rely on prior session memory. Store each correction brief under a
+distinct filename and reapply Brief Review. Under `auto`, a precise in-scope
+correction does not itself require another preview; `required` still does.
 
 Stop without correction when the finding requires a material user decision,
 scope expansion, or a third correction run. Runner failures follow the normal
@@ -67,15 +73,33 @@ always requires explicit user approval.
 ## Failed-Runner Recovery
 
 After any Runner execution failure, wait until Runner and Qoder have ended and
-inspect the prepared session without generating its review patch. If the index
-is unchanged, every edit is explainable and in scope, and the original task and
-baseline still apply, an explicitly approved continuation must use the same
-`qoderCwd` and preserve its partial work. Resolve external prerequisites first,
-use a distinct recovery brief, and restate in the approval prompt that the same
-task-required private or project content will be sent to Qoder's external
-service. Stop if the same hard failure repeats. For the exact retryable
-`model_queue_exhausted` code, allow at most one recovery. Do not broaden
-permissions or retry automatically.
+run `qoder_worktree.mjs inspect --state <statePath>` without generating a review
+patch. Continue only when `inspection.session.phase === "prepared"`,
+`inspection.indexModified === false`, every edit is explainable and in scope,
+and the original task and baseline still apply. An explicitly approved
+continuation must use the same `qoderCwd` and preserve its partial work. Resolve
+external prerequisites first, use a distinct recovery brief, and restate in the
+approval prompt that the same task-required private or project content will be
+sent to Qoder's external service. Stop if the same hard failure repeats. For
+the exact retryable `model_queue_exhausted` code, allow at most one recovery.
+Do not broaden permissions or retry automatically.
+
+For an approved recovery, reissue the complete original brief under a distinct
+filename and change only the objective to:
+
+```text
+Continue the interrupted bounded task from the existing uncommitted changes in
+this worktree. Inspect the current diff before editing and do not restart from
+scratch.
+
+Repair incomplete or invalid edits, complete the task, and run the relevant
+checks. Do not commit, stage, stash, reset, clean, or modify Git worktree
+configuration.
+```
+
+Preserve required context, compiled rules, scope, acceptance criteria,
+verification, assumptions, and stop conditions. After success, continue the
+normal diff, independent checks, review, and apply lifecycle.
 
 ## Stop Conditions
 
@@ -86,6 +110,8 @@ Stop rather than bypassing a condition when:
 - the task needs ignored artifacts that the coordinator does not mirror;
 - the Runner reports a failure whose processes are still live, state cannot be
   explained, or temporary Git index was changed;
+- failed-Runner inspection returns any session phase other than `prepared`,
+  including `review_ready` or `applied`;
 - `reopen` detects that a reviewed worktree drifted after patch generation;
 - the review patch is empty but Qoder claims code changes;
 - source changes make `apply --check` fail;

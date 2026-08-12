@@ -127,7 +127,9 @@ Invoke `$qoder-agent` or `$qoder-worker`; both use the same Runner. Read
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) for the Codex
 collaboration workflow,
 [skill/qoder-agent/references/delegation-prompt.md](skill/qoder-agent/references/delegation-prompt.md)
-for the context-aware `Qoder Delegation Brief v1` compiled by Codex, and
+for the context-aware `Qoder Delegation Brief v1` compiled by Codex,
+[skill/qoder-agent/references/worktree-review.md](skill/qoder-agent/references/worktree-review.md)
+for the isolated review, correction, recovery, and apply lifecycle, and
 [skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
 for the result envelope.
 

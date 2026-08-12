@@ -11,7 +11,6 @@ Brief Review policy live in `SKILL.md`.
 - [Compile Context](#compile-context)
 - [Extend the Brief](#extend-the-brief)
 - [Preview Fidelity](#preview-fidelity)
-- [Corrections and Recovery](#corrections-and-recovery)
 
 ## Roles and Boundaries
 
@@ -138,27 +137,5 @@ gate.
 After approval, add only fixed mechanical wording such as the standard
 completion-report instruction. Re-present the preview if any listed field
 changes. Approval authorizes one Qoder execution with that brief, not patch
-application or a materially different correction. The explicit data-transfer
-authorization separately covers at most two review-driven corrections only
-while the objective, data categories, `qoderCwd`, and change scope remain the
-same.
-
-## Corrections and Recovery
-
-For each automatic in-scope correction allowed by `SKILL.md`, compile a new
-brief that preserves the complete original objective, required context,
-compiled rules, scope, acceptance criteria, verification, assumptions, and
-stop conditions. Add the concrete review findings and direct Qoder to implement
-the whole task with those defects corrected. Do not write a findings-only brief:
-the reopened review worktree retains the complete rejected candidate, while the
-Runner still receives no persistent session memory. Tell Qoder to continue from
-and repair the existing uncommitted changes. Reapply Brief Review; a precise
-correction does not by itself elevate `auto` risk.
-
-For an explicitly approved failed-Runner continuation, reissue the original
-brief in the same worktree, preserve its context and constraints, and change
-only the objective to continue from and repair the existing uncommitted
-changes. Never rely on prior session memory because the Runner disables session
-persistence. Recovery approval must restate and approve sending the same
-task-required private or project content to Qoder's external service. The exact
-`model_queue_exhausted` recovery remains limited to one continuation.
+application or a materially different correction. Follow
+`worktree-review.md` for correction and recovery briefs.
