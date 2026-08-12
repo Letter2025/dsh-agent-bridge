@@ -29,6 +29,45 @@ not request a reusable broad approval for arbitrary Node or shell commands.
 Host execution does not relax the Runner's fixed safety policy, absolute `cwd`
 requirement, or Qoder `permission-mode auto`.
 
+## External Service Data Authorization
+
+Treat Qoder as an external service. The Runner sends the delegation brief to
+Qoder, and Qoder may transmit task-required files it reads under `qoderCwd` for
+remote processing. Before the first Runner invocation, obtain explicit,
+task-scoped authorization to send these categories of data:
+
+- the delegation brief;
+- task-required private-repository files under the disclosed `qoderCwd`; and
+- any listed OpenSpec, specification, or compiled project context.
+
+An instruction to use Qoder, approval of the engineering objective, approval
+of host execution, or approval of a correction is not by itself data-transfer
+authorization. The authorization must explicitly mention sending private or
+project content to the Qoder external service. If the user's request already
+contains that explicit authorization, do not ask again.
+
+Otherwise, present this disclosure together with any required brief preview
+and wait for approval:
+
+```text
+Approving this Qoder delegation authorizes sending the task brief and the
+task-required files under <qoderCwd>, including private repository source and
+the listed OpenSpec/specification context, to Qoder's external service. This
+authorization covers the initial run and at most two review-driven correction
+runs with the same objective, data categories, qoderCwd, and change scope. It
+does not authorize credentials or secrets, unrelated files, a wider scope,
+failed-run recovery, or applying the resulting patch.
+```
+
+This gate applies even when Brief Review is `off` or would not trigger under
+`auto`. Never send credentials, secrets, ignored local artifacts, or unrelated
+content even if the user gives broad data-transfer authorization. Obtain new
+authorization before widening `qoderCwd`, adding a new data category, changing
+the objective or change scope materially, or recovering a failed Runner. A
+failed-Runner recovery prompt may combine recovery and data-transfer approval,
+but it must restate what will be sent to Qoder. Final patch application always
+remains a separate approval.
+
 ## Isolated Worktree Review (Default)
 
 For a code-changing task in a Git worktree, use the bundled coordinator before
@@ -147,8 +186,8 @@ brief approval gate, not OpenSpec generation.
   preview. Show the preview and wait for explicit approval before invoking
   Qoder.
 - `off`: Use when the user explicitly asks to skip the preview. This never
-  skips necessary clarification, host-execution approval, or final patch-apply
-  approval.
+  skips necessary clarification, external-service data authorization,
+  host-execution approval, or final patch-apply approval.
 - `auto`: Use by default. Show the preview when delegation risk is elevated by
   ambiguous acceptance, multiple modules or a broad working directory,
   OpenSpec or other project specifications, compiled rules from another Skill,
@@ -160,7 +199,10 @@ When review is required, show a concise preview containing the objective,
 context and compiled rules when present, change scope, acceptance criteria,
 verification, and material assumptions. Do not invoke Qoder until the user
 approves it. Re-present the preview after any material change to those fields.
-Brief approval authorizes only the Qoder run; it never authorizes applying the
+When data-transfer authorization is also required, combine its disclosure with
+this preview so one explicit response can approve both. Brief approval alone
+authorizes only the Qoder run; only the explicit disclosure authorizes sending
+private or project content to Qoder, and neither authorizes applying the
 resulting patch.
 
 ## Write the Brief Safely
@@ -188,13 +230,17 @@ node /path/to/qoder-agent/scripts/run_qoder.mjs \
 
 In Codex, submit this command with `sandbox_permissions:
 "require_escalated"`. Never use an escalation to add Qoder permission
-overrides, tool filters, or system-prompt overrides.
+overrides, tool filters, or system-prompt overrides. In the escalation
+justification, state that Qoder is an external service, identify the authorized
+data categories, and say whether the invocation is the initial run, an
+authorized in-scope correction, or an explicitly approved recovery. Do not
+claim data-transfer authorization unless it is present in the conversation.
 
-The user's original bounded task authorizes in-scope correction runs described
-below; do not ask for separate conversational permission merely because a new
-Qoder session is needed. Host-execution approval remains a separate sandbox
-requirement: submit the exact escalated command when needed and let the command
-approval mechanism handle it.
+Explicit data-transfer authorization for the original bounded task covers the
+in-scope correction runs described below; do not ask for separate
+conversational permission merely because a new Qoder session is needed. Host
+execution approval remains a separate sandbox requirement: submit the exact
+escalated command when needed and let the command approval mechanism handle it.
 
 The final envelope is emitted after Qoder exits and, with `--prompt-file`, is
 first saved as `<prompt-file>.result.json`. When the terminal tool supports a
@@ -235,8 +281,9 @@ guesses a user-home installation path.
 1. Record the narrowest task `cwd`, source `git status`, and relevant source
    diff. Do not modify or stage source changes to prepare Qoder's worktree.
 2. Create the isolated worktree, compile the brief against the returned
-   `qoderCwd`, apply the brief-review policy, write the approved or
-   auto-accepted brief safely, and invoke the Runner with `--prompt-file`.
+   `qoderCwd`, apply the brief-review policy, obtain explicit external-service
+   data authorization, write the approved or auto-accepted brief safely, and
+   invoke the Runner with `--prompt-file`.
 3. Let Qoder work only under the Runner's fixed safety policy and `auto`
    permissions. Do not change modes if an action is denied.
 4. Generate the coordinator's review patch, inspect that exact patch, and run
@@ -261,9 +308,11 @@ guesses a user-home installation path.
 7. After a successful Runner execution whose candidate fails independent
    review, automatically issue at most two correction tasks when every finding
    is concrete, verifiable, and inside the original objective, scope, and
-   acceptance criteria. The original task authorization covers these runs; an
-   "explicit correction task" means a new bounded brief, not new conversational
-   approval. Preserve the full original task and add the review findings.
+   acceptance criteria. The original explicit data-transfer authorization
+   covers these runs only while its objective, data categories, `qoderCwd`, and
+   change scope remain unchanged; an "explicit correction task" means a new
+   bounded brief, not new conversational approval. Preserve the full original
+   task and add the review findings.
    Invoke `reopen --state <statePath>`, then rerun Qoder in its returned same
    `qoderCwd` so the correction inherits the complete rejected candidate.
    Store each correction brief under a distinct filename beside the session
@@ -291,10 +340,12 @@ gateway, provider, or queue text.
    when the phase is `prepared`, `indexModified` is false, all changes are
    explainable and in scope, and the original task and baseline remain valid.
    Otherwise stop and retain the session.
-3. Obtain explicit approval before continuing any failed execution. Never
-   retry automatically. Resolve authentication, executable, permission, or
-   other external prerequisites before reissuing the Runner, and stop when the
-   same hard failure repeats.
+3. Obtain explicit approval before continuing any failed execution. In the
+   same prompt, restate that the task brief and task-required private or project
+   content will be sent to Qoder's external service; the response must approve
+   both recovery and that transfer. Never retry automatically. Resolve
+   authentication, executable, permission, or other external prerequisites
+   before reissuing the Runner, and stop when the same hard failure repeats.
 4. Re-run the Runner in the same `qoderCwd` and same prepared worktree. Reissue
    the original delegation brief with an objective that instructs Qoder to
    inspect and repair existing uncommitted changes rather than restart from

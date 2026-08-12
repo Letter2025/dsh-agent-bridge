@@ -47,10 +47,12 @@ grant reusable arbitrary shell or Node access.
 
 ## Review Corrections
 
-The original task authorizes at most two automatic correction runs after the
-initial successful Runner execution when independent review finds only
-concrete, verifiable, in-scope defects. Do not ask for conversational approval
-solely to start such a run. Run `qoder_worktree.mjs reopen --state <statePath>`.
+The original explicit data-transfer authorization covers at most two automatic
+correction runs after the initial successful Runner execution when independent
+review finds only concrete, verifiable, in-scope defects and the objective,
+data categories, `qoderCwd`, and change scope remain unchanged. Do not ask for
+conversational approval solely to start such a run. Run `qoder_worktree.mjs
+reopen --state <statePath>`.
 It verifies the reviewed state, archives the rejected patch as
 `qoder-only.attempt-<n>.patch`, restores only the temporary index to the source
 baseline, and returns the same `qoderCwd` with all candidate files intact.
@@ -69,9 +71,11 @@ inspect the prepared session without generating its review patch. If the index
 is unchanged, every edit is explainable and in scope, and the original task and
 baseline still apply, an explicitly approved continuation must use the same
 `qoderCwd` and preserve its partial work. Resolve external prerequisites first,
-use a distinct recovery brief, and stop if the same hard failure repeats. For
-the exact retryable `model_queue_exhausted` code, allow at most one recovery.
-Do not broaden permissions or retry automatically.
+use a distinct recovery brief, and restate in the approval prompt that the same
+task-required private or project content will be sent to Qoder's external
+service. Stop if the same hard failure repeats. For the exact retryable
+`model_queue_exhausted` code, allow at most one recovery. Do not broaden
+permissions or retry automatically.
 
 ## Stop Conditions
 

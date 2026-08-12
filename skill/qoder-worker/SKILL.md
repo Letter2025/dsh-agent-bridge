@@ -40,7 +40,9 @@ Before invoking Qoder, read the co-installed `qoder-agent/SKILL.md` and follow
 its base brief, progressive context extension, narrow `cwd`, and three-state
 Brief Review (Spec) policy. Read `references/delegation-prompt.md` only when its
 context-extension triggers apply. Do not tell Qoder to invoke Codex Skills or
-assume they are installed in Qoder.
+assume they are installed in Qoder. Follow its external-service data
+authorization protocol before every initial Runner invocation or failed-run
+recovery; Brief Review `off` does not waive that authorization.
 
 Run the co-installed Runner with the narrowest absolute task directory that
 contains the expected changes and the compiled brief:

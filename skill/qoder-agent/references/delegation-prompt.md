@@ -129,10 +129,19 @@ preview derived from the actual brief. Include every decision-relevant field:
 - acceptance criteria and verification;
 - material assumptions, decisions, and task-specific stop conditions.
 
+The host-side preview must also include the external-service data disclosure
+required by `SKILL.md` unless the conversation already contains explicit
+task-scoped authorization. Do not put that authorization request inside the
+delegation brief sent to Qoder. Brief Review `off` does not waive this separate
+gate.
+
 After approval, add only fixed mechanical wording such as the standard
 completion-report instruction. Re-present the preview if any listed field
 changes. Approval authorizes one Qoder execution with that brief, not patch
-application or a materially different correction.
+application or a materially different correction. The explicit data-transfer
+authorization separately covers at most two review-driven corrections only
+while the objective, data categories, `qoderCwd`, and change scope remain the
+same.
 
 ## Corrections and Recovery
 
@@ -150,5 +159,6 @@ For an explicitly approved failed-Runner continuation, reissue the original
 brief in the same worktree, preserve its context and constraints, and change
 only the objective to continue from and repair the existing uncommitted
 changes. Never rely on prior session memory because the Runner disables session
-persistence. The exact `model_queue_exhausted` recovery remains limited to one
-continuation.
+persistence. Recovery approval must restate and approve sending the same
+task-required private or project content to Qoder's external service. The exact
+`model_queue_exhausted` recovery remains limited to one continuation.
