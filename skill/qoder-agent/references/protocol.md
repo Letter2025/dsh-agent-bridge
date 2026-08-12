@@ -164,13 +164,62 @@ removed before Qoder starts.
 
 Until an exit code is available, the caller must keep waiting on the same
 command session and treat empty stdout or worktree inspection as provisional.
-When supported by the terminal tool, the Skill requests an initial yield of at
-most 30000 ms and then empty stdin waits with `yield_time_ms: 180000` on that
-same session. Each value is a maximum wait: output or process exit returns
-control immediately. A caller should issue another wait only when the prior
-one returns without an exit code, and should not add higher-frequency polling.
-Unsupported yield controls fall back to the terminal tool's defaults without
-changing the Runner protocol.
+When programmatic tool calling is available, wrap every wait round in one outer
+tool call with `yield_time_ms: 200000`. In the first round, this leaves 5000 ms
+beyond the maximum sequential 15000 ms startup wait and 180000 ms session wait;
+later rounds retain 20000 ms. This synchronization headroom covers scheduling
+and result serialization; it is not an additional Qoder wait or a Runner
+timeout.
+
+For the first round, start the Runner with `exec_command.yield_time_ms: 15000`;
+do not rely on the terminal tool's default. If it returns an exit code, return
+that result immediately. If it returns a session ID, make exactly one empty
+stdin wait with `yield_time_ms: 180000` on that session inside the same outer
+tool call:
+
+```js
+// @exec: {"yield_time_ms": 200000, "max_output_tokens": 10000}
+const started = await tools.exec_command({
+  cmd: "<exact approved Runner command>",
+  workdir: "<absolute task directory>",
+  yield_time_ms: 15000,
+  max_output_tokens: 10000,
+  // Include the exact approved sandbox fields when host access is required.
+});
+
+if (started.exit_code !== undefined) {
+  text(JSON.stringify(started));
+} else {
+  const waited = await tools.write_stdin({
+    session_id: started.session_id,
+    chars: "",
+    yield_time_ms: 180000,
+    max_output_tokens: 10000,
+  });
+  text(JSON.stringify(waited));
+}
+```
+
+For every later round, use the same 200000 ms outer yield and make exactly one
+180000 ms empty stdin wait on the same session:
+
+```js
+// @exec: {"yield_time_ms": 200000, "max_output_tokens": 10000}
+const waited = await tools.write_stdin({
+  session_id: <existing session ID>,
+  chars: "",
+  yield_time_ms: 180000,
+  max_output_tokens: 10000,
+});
+text(JSON.stringify(waited));
+```
+
+Each value is a maximum wait: output or process exit returns control
+immediately, without waiting out the remaining outer headroom. End when a wait
+returns an exit code. Start another round only when it instead returns a live
+session ID. Do not issue higher-frequency stdin waits or inspect the temporary
+worktree while Qoder is still running. Unsupported yield controls fall back to
+the terminal tool's defaults without changing the Runner protocol.
 
 The wait budget covers the configured timeout plus the 2000 ms termination
 grace. After both processes end, a valid saved envelope recovers a lost command
