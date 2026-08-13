@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import "node:os";
 //#region packages/core/src/runner/constants.ts
 const RUNNER_VERSION = "0.4.1";
-const DEFAULT_TIMEOUT_MS = 9e5;
+const DEFAULT_TIMEOUT_MS = 18e5;
 const MAX_TIMEOUT_MS = 36e5;
 const FIXED_SAFETY_POLICY = [
 	"You are a delegated coding worker operating only under the explicit working directory.",

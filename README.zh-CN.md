@@ -105,6 +105,10 @@ node skill/qoder-agent/scripts/run_qoder.mjs \
 Runner 始终使用 `permission-mode auto`、JSON 输出、禁用会话持久化、参数数组启动、
 有界模型重试和输出限制、脱敏、隐藏 Windows 子进程和按平台终止进程树。
 
+默认超时时间为 30 分钟。如果用户显式说明委派任务是长任务，Skill 会为该次调用传入
+`--timeout-ms 3600000`，将超时时间设为 1 小时，并把结果轮询从普通任务的外层
+200 秒/内层 180 秒切换为外层 300 秒/内层 280 秒。
+
 可通过 `$qoder-agent` 或 `$qoder-worker` 调用，两者使用同一个 Runner。请阅读
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) 了解 Codex 协作
 流程，阅读

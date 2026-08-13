@@ -63,13 +63,19 @@ Supported configuration uses CLI over environment over defaults:
 | ---------- | ----------------------------- | --------------------------------- | -------------------- |
 | executable | `--qodercli-path`             | `QODERCLI_PATH`                   | `qodercli` in `PATH` |
 | model      | `--model`                     | `QODER_MODEL`                     | unset; Qoder chooses |
-| timeout    | `--timeout-ms`                | `QODER_TIMEOUT_MS`                | 900000 ms            |
+| timeout    | `--timeout-ms`                | `QODER_TIMEOUT_MS`                | 1800000 ms           |
 | retries    | `--max-model-request-retries` | `QODER_MAX_MODEL_REQUEST_RETRIES` | 3                    |
 
 Timeout values must be positive integers and cannot exceed 3600000 ms. There
 is no permission-mode environment variable. Model request retries must be an
 integer from 0 through 10. The Runner always builds this argument array, with
 the prompt after `--`:
+
+The caller uses the 1800000 ms default for ordinary tasks. Only when the user
+explicitly identifies the delegated task as long running, the caller passes
+`--timeout-ms 3600000` for that invocation and selects the long-task polling
+policy below. The Runner does not infer this from prompt text, task complexity,
+elapsed time, or repository size.
 
 ```text
 qodercli --print --cwd <normalized-cwd> --permission-mode auto
@@ -164,18 +170,26 @@ removed before Qoder starts.
 
 Until an exit code is available, the caller must keep waiting on the same
 command session and treat empty stdout or worktree inspection as provisional.
-When programmatic tool calling is available, wrap every wait round in one outer
-tool call with `yield_time_ms: 200000`. In the first round, this leaves 5000 ms
-beyond the maximum sequential 15000 ms startup wait and 180000 ms session wait;
-later rounds retain 20000 ms. This synchronization headroom covers scheduling
-and result serialization; it is not an additional Qoder wait or a Runner
-timeout.
+When programmatic tool calling is available, select the wait policy once for
+the invocation:
+
+| Task classification | Outer tool call | Inner session wait |
+| ------------------- | --------------- | ------------------ |
+| Ordinary            | 200000 ms       | 180000 ms          |
+| Explicit long task  | 300000 ms       | 280000 ms          |
+
+Do not use the long-task policy unless the user explicitly classified that
+task as long running. In either policy, later rounds retain 20000 ms of
+synchronization headroom; the first retains at least 5000 ms beyond the maximum
+sequential 15000 ms startup wait and the inner session wait. This headroom
+covers scheduling and result serialization; it is not an additional Qoder wait
+or a Runner timeout.
 
 For the first round, start the Runner with `exec_command.yield_time_ms: 15000`;
 do not rely on the terminal tool's default. If it returns an exit code, return
 that result immediately. If it returns a session ID, make exactly one empty
-stdin wait with `yield_time_ms: 180000` on that session inside the same outer
-tool call:
+stdin wait on that session inside the same outer tool call. For an ordinary
+task, use:
 
 ```js
 // @exec: {"yield_time_ms": 200000, "max_output_tokens": 10000}
@@ -200,8 +214,11 @@ if (started.exit_code !== undefined) {
 }
 ```
 
-For every later round, use the same 200000 ms outer yield and make exactly one
-180000 ms empty stdin wait on the same session:
+For an explicit long task, change only the outer pragma's `yield_time_ms` to
+`300000` and the inner `write_stdin` wait's `yield_time_ms` to `280000`.
+
+For every later round, preserve the policy selected for the invocation and make
+exactly one empty stdin wait on the same session. The ordinary-task form is:
 
 ```js
 // @exec: {"yield_time_ms": 200000, "max_output_tokens": 10000}
@@ -213,6 +230,9 @@ const waited = await tools.write_stdin({
 });
 text(JSON.stringify(waited));
 ```
+
+For an explicit long task, use `yield_time_ms: 300000` in the outer pragma and
+`yield_time_ms: 280000` in `write_stdin` instead.
 
 Each value is a maximum wait: output or process exit returns control
 immediately, without waiting out the remaining outer headroom. End when a wait

@@ -210,6 +210,11 @@ node /path/to/qoder-agent/scripts/run_qoder.mjs \
   --prompt-file /absolute/path/to/delegation-brief.md
 ```
 
+Classify an invocation as a long task only when the user explicitly identifies
+that delegated task as long running. Do not infer this classification or carry
+it into later tasks. Follow the protocol's corresponding timeout and polling
+policy; it is the sole source for their values and configuration precedence.
+
 Use the coordinator's returned `qoderCwd` for code-changing tasks. In the host
 escalation justification, identify Qoder as an external service, the authorized
 data categories, and whether this is the initial run, an authorized in-scope

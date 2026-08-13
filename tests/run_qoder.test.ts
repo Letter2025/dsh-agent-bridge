@@ -194,7 +194,7 @@ describe("Runner input and command construction", () => {
   });
 
   it("applies timeout defaults and bounds", () => {
-    expect(DEFAULT_TIMEOUT_MS).toBe(900_000);
+    expect(DEFAULT_TIMEOUT_MS).toBe(1_800_000);
     expect(parseTimeout(String(DEFAULT_TIMEOUT_MS))).toBe(DEFAULT_TIMEOUT_MS);
     expect(parseTimeout("3600000")).toBe(3_600_000);
     expect(() => parseTimeout("0")).toThrow(/between/);

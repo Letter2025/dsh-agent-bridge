@@ -124,6 +124,12 @@ auto`, JSON output, no session persistence, argument-array spawning, bounded
 model retries and output, redaction, hidden Windows subprocesses, and
 platform-specific process-tree termination.
 
+The default timeout is 30 minutes. When the user explicitly identifies a
+delegated task as long running, the Skill passes `--timeout-ms 3600000` to give
+that invocation a one-hour timeout and changes result polling from the ordinary
+200-second outer/180-second inner waits to 300-second outer/280-second inner
+waits.
+
 Invoke `$qoder-agent` or `$qoder-worker`; both use the same Runner. Read
 [skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) for the Codex
 collaboration workflow,
