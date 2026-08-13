@@ -51,8 +51,9 @@ semantics; those findings will shape any later MCP design.
 - Codex remains the planner, context compiler, reviewer, and acceptance owner;
   Qoder is a bounded coding executor, not an autonomous peer session.
 - Code-changing worktree isolation requires a Git repository with a `HEAD`
-  commit and no unmerged paths. Ignored files such as `node_modules` are not
-  mirrored into the temporary worktree.
+  commit and no unmerged paths. Ignored files are unavailable by default; a
+  root `.qoderinclude` can optionally snapshot ignored build inputs when they
+  exist locally.
 - Keep `cwd` at the narrowest real write boundary. Context outside it must be
   summarized into the brief rather than exposed by widening Qoder's writable
   scope.
@@ -136,10 +137,32 @@ for the result envelope.
 ## Isolated worktree lifecycle
 
 Code-changing tasks use a temporary detached Git worktree. The coordinator
-mirrors tracked and non-ignored source state only; ignored dependencies such
-as `node_modules` are not copied, linked, or installed. After explicit review
-approval, `apply` checks and applies the Qoder-only patch without staging the
-source, then automatically removes the temporary worktree and session. If
+mirrors tracked and non-ignored source state. A repository-root `.qoderinclude`
+may select ignored files, such as generated OpenAPI schemas, as copied check
+inputs when they exist locally. These files never enter the baseline, review patch, or
+source apply operation.
+
+`.qoderinclude` uses repository-relative glob patterns. Ordinary rules include,
+`!` rules exclude, and the last matching rule wins. Missing matches, tracked or
+non-ignored matches, and matches outside the requested `cwd` are skipped without
+failing `prepare`; a non-empty configuration with no local matches produces an
+empty manifest. Git efficiently enumerates ordinary ignored files, while a
+glob-directed filesystem scan detects matched special files without imposing
+literal-root restrictions on patterns such as `*.json`, `generated/*.ts`, or
+`packages/*/generated/**`. The snapshot is limited to 20,000 entries and
+256 MiB. Unsafe links, special files, invalid paths, and over-limit selections
+make `prepare` fail. This project declaration does not authorize disclosure of
+secrets or unrelated local data to Qoder.
+
+The v2 session validates the manifest against its recorded SHA-256 and
+summary to detect accidental coordinator-state damage. Inspect, review, reopen,
+and apply share its exclusion set. Included ignored artifacts may change inside
+the temporary worktree, but their prepared paths remain local check inputs and
+cannot enter the Qoder-only patch or source apply operation. This is a
+cooperative integrity check, not a sandbox against a malicious worker.
+
+After explicit review approval, `apply` checks and applies the Qoder-only patch
+without staging the source, then automatically removes the temporary worktree and session. If
 application fails, the session is retained for diagnosis; if cleanup fails
 after application, retry `dispose --state <statePath>`. Use
 `dispose --state <statePath> --discard` only to discard an unapplied session.

@@ -9,4 +9,10 @@ export {
   type ReopenedReview,
   type WorktreeInspection,
 } from "./coordinator";
-export { WorktreeError, type WorktreeSession } from "./types";
+export {
+  WorktreeError,
+  type IncludedArtifactManifest,
+  type IncludedArtifactManifestEntry,
+  type IncludedIgnoredArtifacts,
+  type WorktreeSession,
+} from "./types";

@@ -1,5 +1,17 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { access, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  truncate,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,6 +25,7 @@ import {
   reopenReviewWorktree,
 } from "@qoder-agent-bridge/core";
 import { executeWorktreeCommand, parseWorktreeArgs } from "../packages/cli/src/qoder-worktree";
+import { enforceIncludedArtifactLimits } from "../packages/core/src/worktree/included-artifacts";
 
 const fixtures: string[] = [];
 const worktreeRunnerPath = fileURLToPath(
@@ -48,6 +61,12 @@ async function createFixture() {
   git(root, ["add", "tracked.txt"]);
   git(root, ["commit", "-m", "initial"]);
   return root;
+}
+
+async function listSessionRoots() {
+  return (await readdir(tmpdir()))
+    .filter((name) => name.startsWith("qoder-agent-worktree-"))
+    .sort();
 }
 
 describe("Qoder isolated worktree coordinator", () => {
@@ -120,6 +139,384 @@ describe("Qoder isolated worktree coordinator", () => {
     expect(await pathExists(session.sessionRoot)).toBe(false);
     expect(git(root, ["worktree", "list", "--porcelain"])).not.toContain(session.worktreeRoot);
   });
+
+  it("copies configured ignored artifacts without adding them to the review patch", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "src/generated/schemas/cache"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "src/generated/\n");
+    await writeFile(
+      join(root, ".qoderinclude"),
+      "# generated types\n/src/generated/schemas/**\n!/src/generated/schemas/cache/**\n",
+    );
+    await writeFile(join(root, "src/generated/schemas/api.ts"), "export type Api = string;\n");
+    await writeFile(join(root, "src/generated/schemas/cache/stale.ts"), "cache\n");
+    git(root, ["add", ".gitignore", ".qoderinclude"]);
+    git(root, ["commit", "-m", "configure generated artifacts"]);
+
+    const session = await prepareWorktree(root);
+    expect(session.includedIgnoredArtifacts).toMatchObject({ fileCount: 1 });
+    expect(session.includedIgnoredArtifacts?.totalBytes).toBeGreaterThan(0);
+    const cliPrepared = await executeWorktreeCommand(["prepare", "--cwd", root]);
+    expect(cliPrepared).toMatchObject({
+      includedIgnoredArtifacts: { fileCount: 1, totalBytes: 26 },
+    });
+    await disposeWorktree(String(cliPrepared.statePath), true);
+    expect(await readFile(join(session.worktreeRoot, "src/generated/schemas/api.ts"), "utf8")).toBe(
+      "export type Api = string;\n",
+    );
+    expect(
+      await pathExists(join(session.worktreeRoot, "src/generated/schemas/cache/stale.ts")),
+    ).toBe(false);
+
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "qoder result\n");
+    const review = await createReviewPatch(session.statePath);
+    expect(review.changedFiles).toEqual(["tracked.txt"]);
+    expect(await readFile(session.reviewPatchPath, "utf8")).not.toContain("generated/schemas");
+    await applyReviewPatch(session.statePath);
+    expect(await readFile(join(root, "src/generated/schemas/api.ts"), "utf8")).toBe(
+      "export type Api = string;\n",
+    );
+  });
+
+  it("treats a missing or empty include config as no operation", async () => {
+    const missingRoot = await createFixture();
+    const missing = await prepareWorktree(missingRoot);
+    expect(missing.includedIgnoredArtifacts).toBeNull();
+    await disposeWorktree(missing.statePath, true);
+
+    const emptyRoot = await createFixture();
+    await writeFile(join(emptyRoot, ".qoderinclude"), "# no dependencies\n\n");
+    const empty = await prepareWorktree(emptyRoot);
+    expect(empty.includedIgnoredArtifacts).toBeNull();
+    await disposeWorktree(empty.statePath, true);
+  });
+
+  it("enforces included artifact file and byte limits", () => {
+    expect(() => enforceIncludedArtifactLimits(20_001, 0)).toThrowError(
+      expect.objectContaining({ code: "include_limit_exceeded" }),
+    );
+    expect(() => enforceIncludedArtifactLimits(1, 256 * 1024 * 1024 + 1)).toThrowError(
+      expect.objectContaining({ code: "include_limit_exceeded" }),
+    );
+    expect(() => enforceIncludedArtifactLimits(20_000, 256 * 1024 * 1024)).not.toThrow();
+  });
+
+  it("writes required v2 state and normalizes only genuine v1 sessions", async () => {
+    const root = await createFixture();
+    const session = await prepareWorktree(root);
+    expect(session.version).toBe(2);
+    const stored = JSON.parse(await readFile(session.statePath, "utf8")) as Record<string, unknown>;
+    stored.version = 1;
+    delete stored.includedIgnoredArtifacts;
+    await writeFile(session.statePath, `${JSON.stringify(stored)}\n`);
+
+    await expect(inspectWorktree(session.statePath)).resolves.toMatchObject({
+      session: { version: 1, includedIgnoredArtifacts: null },
+    });
+    await disposeWorktree(session.statePath, true);
+
+    const v2 = await prepareWorktree(root);
+    const invalid = JSON.parse(await readFile(v2.statePath, "utf8")) as Record<string, unknown>;
+    delete invalid.includedIgnoredArtifacts;
+    await writeFile(v2.statePath, `${JSON.stringify(invalid)}\n`);
+    await expect(inspectWorktree(v2.statePath)).rejects.toMatchObject({ code: "invalid_input" });
+    invalid.includedIgnoredArtifacts = null;
+    await writeFile(v2.statePath, `${JSON.stringify(invalid)}\n`);
+    await disposeWorktree(v2.statePath, true);
+  });
+
+  it("reads a v1 artifact manifest without the v2 digest field", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, "generated/schema.ts"), "schema\n");
+    const session = await prepareWorktree(root);
+    const stored = JSON.parse(await readFile(session.statePath, "utf8")) as {
+      version: number;
+      includedIgnoredArtifacts: Record<string, unknown>;
+    };
+    stored.version = 1;
+    delete stored.includedIgnoredArtifacts.manifestSha256;
+    await writeFile(session.statePath, `${JSON.stringify(stored)}\n`);
+    await expect(inspectWorktree(session.statePath)).resolves.toMatchObject({
+      session: {
+        version: 1,
+        includedIgnoredArtifacts: { manifestSha256: null, fileCount: 1 },
+      },
+    });
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it("excludes modified included artifacts from the review patch", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, "generated/schema.ts"), "original\n");
+    const session = await prepareWorktree(root);
+
+    const forged = "forged\n";
+    await writeFile(join(session.worktreeRoot, "generated/schema.ts"), forged);
+    await writeFile(join(session.worktreeRoot, ".gitignore"), "");
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "candidate\n");
+    const review = await createReviewPatch(session.statePath);
+    expect(review.changedFiles).toEqual([".gitignore", "tracked.txt"]);
+    expect(await readFile(session.reviewPatchPath, "utf8")).not.toContain("generated/schema.ts");
+    await applyReviewPatch(session.statePath);
+    expect(await readFile(join(root, "generated/schema.ts"), "utf8")).toBe("original\n");
+  });
+
+  it("uses the same artifact exclusion for inspect, diff, reopen, and apply", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, "generated/schema.ts"), "original\n", { mode: 0o644 });
+    await writeFile(join(root, "generated/deleted.ts"), "delete me\n");
+    const session = await prepareWorktree(root);
+
+    await writeFile(join(session.worktreeRoot, "generated/schema.ts"), "changed\n");
+    await chmod(join(session.worktreeRoot, "generated/schema.ts"), 0o600);
+    await rm(join(session.worktreeRoot, "generated/deleted.ts"));
+    await writeFile(join(session.worktreeRoot, ".gitignore"), "");
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "candidate\n");
+    await expect(inspectWorktree(session.statePath)).resolves.toMatchObject({
+      changedFiles: [".gitignore", "tracked.txt"],
+    });
+    await expect(createReviewPatch(session.statePath)).resolves.toMatchObject({
+      changedFiles: [".gitignore", "tracked.txt"],
+    });
+    await expect(reopenReviewWorktree(session.statePath)).resolves.toMatchObject({
+      changedFiles: [".gitignore", "tracked.txt"],
+    });
+    await createReviewPatch(session.statePath);
+    await applyReviewPatch(session.statePath);
+    expect(await readFile(join(root, "generated/schema.ts"), "utf8")).toBe("original\n");
+    expect(await readFile(join(root, "generated/deleted.ts"), "utf8")).toBe("delete me\n");
+  });
+
+  it("rejects a reviewed index that contains a prepared artifact path", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, "generated/schema.ts"), "original\n");
+    const session = await prepareWorktree(root);
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "candidate\n");
+    await createReviewPatch(session.statePath);
+    await writeFile(join(session.worktreeRoot, "generated/schema.ts"), "changed\n");
+    git(session.worktreeRoot, ["add", "--force", "generated/schema.ts"]);
+    const currentPatch = git(session.worktreeRoot, [
+      "diff",
+      "--binary",
+      "--cached",
+      session.baselineTree,
+    ]);
+    await writeFile(session.reviewPatchPath, currentPatch);
+    await expect(applyReviewPatch(session.statePath)).rejects.toMatchObject({
+      code: "included_artifact_in_patch",
+    });
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it("excludes a force-added artifact from inspect changes while reporting index drift", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, "generated/schema.ts"), "original\n");
+    const session = await prepareWorktree(root);
+    await writeFile(join(session.worktreeRoot, "generated/schema.ts"), "changed\n");
+    git(session.worktreeRoot, ["add", "--force", "generated/schema.ts"]);
+
+    await expect(inspectWorktree(session.statePath)).resolves.toMatchObject({
+      hasChanges: false,
+      changedFiles: [],
+      indexModified: true,
+    });
+    await expect(createReviewPatch(session.statePath)).rejects.toMatchObject({
+      code: "git_index_modified",
+    });
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it.each(["inspect", "diff", "reopen", "apply"] as const)(
+    "rejects a damaged artifact manifest before %s",
+    async (operation) => {
+      const root = await createFixture();
+      await mkdir(join(root, "generated"), { recursive: true });
+      await writeFile(join(root, ".gitignore"), "generated/\n");
+      await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+      await writeFile(join(root, "generated/schema.ts"), "schema\n");
+      const session = await prepareWorktree(root);
+      if (operation === "reopen" || operation === "apply") {
+        await writeFile(join(session.worktreeRoot, "tracked.txt"), "candidate\n");
+        await createReviewPatch(session.statePath);
+      }
+      await writeFile(session.includedIgnoredArtifacts?.manifestPath ?? "", "{}\n");
+      const action =
+        operation === "inspect"
+          ? inspectWorktree(session.statePath)
+          : operation === "diff"
+            ? createReviewPatch(session.statePath)
+            : operation === "reopen"
+              ? reopenReviewWorktree(session.statePath)
+              : applyReviewPatch(session.statePath);
+      await expect(action).rejects.toMatchObject({
+        code: "included_artifact_snapshot_invalid",
+      });
+      await disposeWorktree(session.statePath, true);
+    },
+  );
+
+  it("applies ordered include, exclude, and re-include rules", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated/cache"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(
+      join(root, ".qoderinclude"),
+      "generated/**\n!generated/cache/**\ngenerated/cache/keep.ts\n",
+    );
+    await writeFile(join(root, "generated/api.ts"), "api\n");
+    await writeFile(join(root, "generated/cache/drop.ts"), "drop\n");
+    await writeFile(join(root, "generated/cache/keep.ts"), "keep\n");
+
+    const session = await prepareWorktree(root);
+    expect(session.includedIgnoredArtifacts?.fileCount).toBe(2);
+    expect(await pathExists(join(session.worktreeRoot, "generated/api.ts"))).toBe(true);
+    expect(await pathExists(join(session.worktreeRoot, "generated/cache/drop.ts"))).toBe(false);
+    expect(await pathExists(join(session.worktreeRoot, "generated/cache/keep.ts"))).toBe(true);
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it("allows optional rules with missing, tracked, and non-ignored matches", async () => {
+    const root = await createFixture();
+    await writeFile(join(root, "local.txt"), "local\n");
+    await writeFile(
+      join(root, ".qoderinclude"),
+      "generated/missing.ts\ngenerated/schemas/**\ntracked.txt\nlocal.txt\n",
+    );
+    const session = await prepareWorktree(root);
+    expect(session.includedIgnoredArtifacts).toMatchObject({ fileCount: 0, totalBytes: 0 });
+    expect(await pathExists(session.includedIgnoredArtifacts?.manifestPath ?? "")).toBe(true);
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it("rejects invalid include paths and glob syntax", async () => {
+    const invalidRoot = await createFixture();
+    await writeFile(join(invalidRoot, ".qoderinclude"), "../secret\n");
+    await expect(prepareWorktree(invalidRoot)).rejects.toMatchObject({
+      code: "invalid_include_config",
+    });
+
+    const globRoot = await createFixture();
+    await writeFile(join(globRoot, ".qoderinclude"), "generated/[abc\n");
+    await expect(prepareWorktree(globRoot)).rejects.toMatchObject({
+      code: "invalid_include_config",
+    });
+  });
+
+  it("copies only included artifacts inside the requested cwd scope", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "packages/a/generated"), { recursive: true });
+    await mkdir(join(root, "packages/b/generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "packages/*/generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "packages/*/generated/**\n");
+    await writeFile(join(root, "packages/a/generated/a.ts"), "a\n");
+    await writeFile(join(root, "packages/b/generated/b.ts"), "b\n");
+
+    const session = await prepareWorktree(join(root, "packages/a"));
+    expect(session.includedIgnoredArtifacts?.fileCount).toBe(1);
+    expect(await pathExists(join(session.worktreeRoot, "packages/a/generated/a.ts"))).toBe(true);
+    expect(await pathExists(join(session.worktreeRoot, "packages/b/generated/b.ts"))).toBe(false);
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it("supports root and single-level glob rules", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "/*.json\n/generated/*.ts\n");
+    await writeFile(join(root, ".qoderinclude"), "*.json\ngenerated/*.ts\n");
+    await writeFile(join(root, "schema.json"), "{}\n");
+    await writeFile(join(root, "generated/api.ts"), "api\n");
+    const session = await prepareWorktree(root);
+    expect(session.includedIgnoredArtifacts?.fileCount).toBe(2);
+    expect(await pathExists(join(session.worktreeRoot, "schema.json"))).toBe(true);
+    expect(await pathExists(join(session.worktreeRoot, "generated/api.ts"))).toBe(true);
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it("fails real prepare capacity preflight and cleans its temporary session", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, "generated/huge.bin"), "");
+    await truncate(join(root, "generated/huge.bin"), 256 * 1024 * 1024 + 1);
+    const before = await listSessionRoots();
+    await expect(prepareWorktree(root)).rejects.toMatchObject({ code: "include_limit_exceeded" });
+    expect(await listSessionRoots()).toEqual(before);
+    expect(git(root, ["worktree", "list", "--porcelain"]).match(/worktree /g)).toHaveLength(1);
+  });
+
+  it("cleans a real prepare that selects too many artifact files", async () => {
+    const root = await createFixture();
+    const generated = join(root, "generated");
+    await mkdir(generated, { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    for (let start = 0; start < 20_001; start += 500) {
+      await Promise.all(
+        Array.from({ length: Math.min(500, 20_001 - start) }, (_, offset) =>
+          writeFile(join(generated, `${start + offset}.txt`), ""),
+        ),
+      );
+    }
+    const before = await listSessionRoots();
+    await expect(prepareWorktree(root)).rejects.toMatchObject({ code: "include_limit_exceeded" });
+    expect(await listSessionRoots()).toEqual(before);
+    expect(git(root, ["worktree", "list", "--porcelain"]).match(/worktree /g)).toHaveLength(1);
+  });
+
+  it("supports repository-internal relative symlinks and rejects escaping symlinks", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, "generated/schema.ts"), "schema\n");
+    await symlink("schema.ts", join(root, "generated/current.ts"));
+
+    const session = await prepareWorktree(root);
+    expect(session.includedIgnoredArtifacts?.fileCount).toBe(2);
+    await disposeWorktree(session.statePath, true);
+
+    await rm(join(root, "generated/current.ts"));
+    await symlink("../../tracked.txt", join(root, "generated/current.ts"));
+    await expect(prepareWorktree(root)).rejects.toMatchObject({
+      code: "unsupported_included_artifact",
+    });
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "rejects glob-matched and exact special files inside selected ignored roots",
+    async () => {
+      const root = await createFixture();
+      await mkdir(join(root, "generated"), { recursive: true });
+      await writeFile(join(root, ".gitignore"), "generated/\n");
+      await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+      await writeFile(join(root, "generated/schema.ts"), "schema\n");
+      execFileSync("mkfifo", [join(root, "generated/schema.pipe")]);
+
+      await expect(prepareWorktree(root)).rejects.toMatchObject({
+        code: "unsupported_included_artifact",
+      });
+      await writeFile(join(root, ".qoderinclude"), "generated/schema.pipe\n");
+      await expect(prepareWorktree(root)).rejects.toMatchObject({
+        code: "unsupported_included_artifact",
+      });
+    },
+  );
 
   it("does not modify the source when the reviewed patch no longer applies", async () => {
     const root = await createFixture();
@@ -319,6 +716,25 @@ describe("Qoder isolated worktree coordinator", () => {
 });
 
 describe("generated worktree executable", () => {
+  it("prepares configured ignored artifacts through the standalone bundle", async () => {
+    const root = await createFixture();
+    await mkdir(join(root, "generated"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "generated/\n");
+    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, "generated/schema.ts"), "schema\n");
+
+    const executed = spawnSync(process.execPath, [worktreeRunnerPath, "prepare", "--cwd", root], {
+      encoding: "utf8",
+    });
+    const result = JSON.parse(executed.stdout.trim()) as Record<string, unknown>;
+    expect(executed.status).toBe(0);
+    expect(result).toMatchObject({
+      status: "succeeded",
+      includedIgnoredArtifacts: { fileCount: 1, totalBytes: 7 },
+    });
+    await disposeWorktree(String(result.statePath), true);
+  });
+
   it("does not execute a command when imported", () => {
     const importScript = `await import(${JSON.stringify(pathToFileURL(worktreeRunnerPath).href)});`;
     const imported = spawnSync(process.execPath, ["--input-type=module", "-e", importScript], {

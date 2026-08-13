@@ -10,9 +10,16 @@ not invoke Qoder; Qoder must still run only through `run_qoder.mjs`.
    `worktreeRoot`, and `qoderCwd` as one JSON object. The coordinator starts at
    `HEAD`, mirrors source tracked changes and non-ignored untracked files, then
    stages that copied state only in the temporary worktree as Qoder's baseline.
-   Ignored dependencies such as `node_modules` are not copied, linked, or
-   installed. Reuse a trustworthy existing session for review corrections and
-   failed-Runner recovery. Use `--retry-of <previous-statePath>` only for an
+   A repository-root `.qoderinclude` can select locally available ignored files as optional copied,
+   unstaged check inputs; missing matches are allowed. `prepare` returns its config path, manifest, rules, file
+   count, and bytes. Inspect the manifest and explicitly disclose the selected
+   path categories and size before Qoder receives them; configuration is not
+   transfer authorization. Matching uses scoped Git pathspec queries plus a
+   glob-directed special-file scan. The v2 session validates the manifest digest
+   and all lifecycle operations exclude its prepared paths, even if those local
+   copies change. Reuse a trustworthy existing session for review
+   corrections and failed-Runner recovery. Use `--retry-of
+<previous-statePath>` only for an
    explicitly requested clean restart or when the predecessor cannot be safely
    continued; it must belong to the same source worktree.
 3. Run the Runner with `--cwd <qoderCwd>`. Qoder must not change the temporary
@@ -107,7 +114,9 @@ Stop rather than bypassing a condition when:
 
 - the source is not a Git worktree, has no `HEAD` commit, or has unmerged
   paths;
-- the task needs ignored artifacts that the coordinator does not mirror;
+- the task needs ignored artifacts not safely selected by `.qoderinclude`, or
+  its manifest contains credentials, secrets, unrelated content, or excessive
+  scope;
 - the Runner reports a failure whose processes are still live, state cannot be
   explained, or temporary Git index was changed;
 - failed-Runner inspection returns any session phase other than `prepared`,

@@ -44,7 +44,8 @@ Skill 的需求、使用约束和审阅语义，这些结论将作为后续 MCP 
 - Codex 始终负责规划、上下文编译、审阅和最终验收；Qoder 是有边界的编码执行器，
   不是一个可自主扩展任务的对等会话。
 - 代码修改的 worktree 隔离要求 Git 仓库已有 `HEAD` commit 且不存在 unmerged
-  path；`node_modules` 等 ignored 文件不会被镜像到临时 worktree。
+  path；ignored 文件默认不可用，仓库根目录的 `.qoderinclude` 可显式快照本地存在的
+  ignored 构建输入候选；该配置与文件都不是硬依赖。
 - `cwd` 必须保持为真实写入范围的最窄边界。位于边界外的上下文应由 Codex 提炼进
   brief，不能为了让 Qoder 读取而扩大其可写范围。
 - brief 审批只授权执行一次 Qoder 任务；把审阅后的 patch 应用到源 worktree 始终
@@ -116,8 +117,25 @@ Runner 始终使用 `permission-mode auto`、JSON 输出、禁用会话持久化
 
 ## 隔离 worktree 生命周期
 
-涉及代码修改的任务会使用临时 detached Git worktree。协调器只镜像已跟踪和
-non-ignored 的源码状态；`node_modules` 等 ignored 依赖不会被复制、链接或安装。
+涉及代码修改的任务会使用临时 detached Git worktree。协调器镜像已跟踪和
+non-ignored 的源码状态。仓库根目录的 `.qoderinclude` 可选择 OpenAPI schemas 等
+本地 ignored 文件，在文件存在时于临时 worktree 中建立副本用于检查；它们不会进入 baseline、
+审阅 patch 或源目录 apply。
+
+`.qoderinclude` 使用仓库相对 glob：普通规则纳入，`!` 规则排除，最后匹配规则生效。
+不存在的匹配、tracked 或 non-ignored 匹配以及本次 `cwd` 范围外的匹配会被安静跳过；
+非空配置最终未匹配本地文件时仍会生成空 manifest。Git 负责高效枚举普通 ignored 文件，
+协调器按 glob 结构定向扫描特殊文件，因此 `*.json`、`generated/*.ts` 和
+`packages/*/generated/**` 等规则不需要额外的字面 ignored 根目录。快照上限为
+20,000 个条目和
+256 MiB；不安全链接、特殊文件、非法路径或超限选择都会使 `prepare` 失败。该配置只
+声明项目依赖，不代表允许向 Qoder 披露密钥或无关本地数据。
+
+session v2 使用记录的 SHA-256 和摘要验证 manifest，防止协调状态意外损坏；inspect、
+审阅、reopen 与 apply 共用其排除集合。included ignored artifact 可以在临时 worktree
+中变化，但 prepare 时登记的路径只作为本地检查输入，不能进入 Qoder-only patch 或源目录
+apply。该校验采用协作式信任模型，不构成针对恶意 worker 的沙箱。
+
 用户明确批准后，`apply` 会先检查并应用 Qoder 专属 patch，不会修改 source 的
 Git index，应用成功后会自动删除临时 worktree 和 session。应用失败时会保留
 session 供排查；如果 patch 已应用但清理失败，可重试

@@ -79,7 +79,7 @@ export function parseWorktreeArgs(argv: string[]): ParsedWorktreeArgs {
         throw new WorktreeError("invalid_input", "--state was provided more than once.");
       }
       values.state = value;
-    } else {
+    } else if (option === "--retry-of") {
       if (values.retryOf !== undefined) {
         throw new WorktreeError("invalid_input", "--retry-of was provided more than once.");
       }
@@ -108,7 +108,11 @@ export function parseWorktreeArgs(argv: string[]): ParsedWorktreeArgs {
   }
 
   if (command === "dispose") {
-    return { command, state: values.state, discard: values.discard };
+    return {
+      command,
+      state: values.state,
+      discard: values.discard,
+    };
   }
   return { command, state: values.state, discard: false };
 }
@@ -124,6 +128,7 @@ export async function executeWorktreeCommand(argv: string[]): Promise<Record<str
       worktreeRoot: session.worktreeRoot,
       qoderCwd: session.worktreeCwd,
       retryOf: session.retryOf,
+      includedIgnoredArtifacts: session.includedIgnoredArtifacts,
     };
   }
   if (parsed.command === "inspect") {

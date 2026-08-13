@@ -1,5 +1,5 @@
 import { lstat, readFile, realpath, writeFile } from "node:fs/promises";
-import { basename, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { assertInside, requireAbsolute } from "./paths";
 import {
   SESSION_PREFIX,
@@ -30,6 +30,10 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
     throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
   }
   const session = parsed as Partial<WorktreeSession>;
+  const hasIncludedArtifactState = Object.prototype.hasOwnProperty.call(
+    session,
+    "includedIgnoredArtifacts",
+  );
   const requiredStrings = [
     session.sessionRoot,
     session.sourceRoot,
@@ -42,7 +46,8 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
     session.reviewPatchPath,
   ];
   if (
-    session.version !== WORKTREE_SESSION_VERSION ||
+    (session.version !== 1 && session.version !== WORKTREE_SESSION_VERSION) ||
+    (session.version === WORKTREE_SESSION_VERSION && !hasIncludedArtifactState) ||
     !["prepared", "review_ready", "applied"].includes(session.phase ?? "") ||
     requiredStrings.some((value) => typeof value !== "string") ||
     (session.reviewAttempt !== undefined &&
@@ -74,6 +79,39 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
   const worktreeCwd = normalizeSessionPath(validSession.worktreeCwd);
   const baselinePatchPath = normalizeSessionPath(validSession.baselinePatchPath);
   const reviewPatchPath = normalizeSessionPath(validSession.reviewPatchPath);
+  const includedIgnoredArtifacts = validSession.includedIgnoredArtifacts ?? null;
+  if (includedIgnoredArtifacts !== null) {
+    if (
+      typeof includedIgnoredArtifacts.configPath !== "string" ||
+      typeof includedIgnoredArtifacts.manifestPath !== "string" ||
+      (validSession.version === WORKTREE_SESSION_VERSION &&
+        (typeof includedIgnoredArtifacts.manifestSha256 !== "string" ||
+          !/^[0-9a-f]{64}$/u.test(includedIgnoredArtifacts.manifestSha256))) ||
+      (validSession.version === 1 &&
+        includedIgnoredArtifacts.manifestSha256 !== undefined &&
+        includedIgnoredArtifacts.manifestSha256 !== null &&
+        (typeof includedIgnoredArtifacts.manifestSha256 !== "string" ||
+          !/^[0-9a-f]{64}$/u.test(includedIgnoredArtifacts.manifestSha256))) ||
+      !Array.isArray(includedIgnoredArtifacts.rules) ||
+      includedIgnoredArtifacts.rules.some((rule) => typeof rule !== "string") ||
+      !Number.isInteger(includedIgnoredArtifacts.fileCount) ||
+      includedIgnoredArtifacts.fileCount < 0 ||
+      !Number.isInteger(includedIgnoredArtifacts.totalBytes) ||
+      includedIgnoredArtifacts.totalBytes < 0
+    ) {
+      throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+    }
+    if (
+      resolve(includedIgnoredArtifacts.configPath) !==
+      resolve(validSession.sourceRoot, ".qoderinclude")
+    ) {
+      throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+    }
+    const normalizedManifestPath = normalizeSessionPath(includedIgnoredArtifacts.manifestPath);
+    if (normalizedManifestPath !== join(sessionRoot, "included-ignored-artifacts.json")) {
+      throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+    }
+  }
   if (!basename(sessionRoot).startsWith(SESSION_PREFIX)) {
     throw new WorktreeError("invalid_input", "--state is outside a Qoder worktree session.");
   }
@@ -86,6 +124,13 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
     ...validSession,
     reviewAttempt: validSession.reviewAttempt ?? (validSession.phase === "review_ready" ? 1 : 0),
     retryOf: validSession.retryOf ?? null,
+    includedIgnoredArtifacts:
+      includedIgnoredArtifacts === null
+        ? null
+        : {
+            ...includedIgnoredArtifacts,
+            manifestSha256: includedIgnoredArtifacts.manifestSha256 ?? null,
+          },
     statePath: resolvedState,
   };
 }

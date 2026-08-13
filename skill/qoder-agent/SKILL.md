@@ -95,9 +95,14 @@ stop conditions.
 
 The coordinator requires a Git worktree with a `HEAD` commit and no unmerged
 paths. It mirrors tracked and non-ignored untracked files into a temporary
-detached worktree; ignored dependencies are unavailable. For a non-Git or
-unmerged directory, or a task needing ignored artifacts, explain the limitation
-and obtain an explicit alternate workflow instead of using the source silently.
+detached worktree. A repository-root `.qoderinclude` may add locally available
+ignored files as optional copied check inputs excluded from review patches. Missing matches do not
+block preparation. Inspect the returned manifest and
+disclose its selected roots, categories, file count, and bytes before transfer; the
+project file itself is not authorization. Stop on secrets, credentials,
+unrelated content, unsafe links, or excessive scope. For a non-Git or unmerged
+directory, obtain an explicit alternate workflow instead of using the source
+silently.
 
 Start the default workflow with:
 

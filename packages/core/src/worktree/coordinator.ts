@@ -5,11 +5,13 @@ import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { runGit } from "./git-client";
+import { prepareIncludedArtifacts, readIncludedArtifactManifestPaths } from "./included-artifacts";
 import { assertInside, requireAbsolute } from "./paths";
 import { copyUntrackedFile, listUntrackedFiles, resolveRepository } from "./repository";
 import { readSession, sessionFileExists, writeSession } from "./session-store";
 import {
   PATCH_FILE_NAME,
+  INCLUDED_ARTIFACT_MANIFEST_FILE_NAME,
   SESSION_PREFIX,
   STATE_FILE_NAME,
   WORKTREE_SESSION_VERSION,
@@ -117,6 +119,7 @@ export async function prepareWorktree(
   const statePath = join(sessionRoot, STATE_FILE_NAME);
   const baselinePatchPath = join(sessionRoot, "source-baseline.patch");
   const reviewPatchPath = join(sessionRoot, PATCH_FILE_NAME);
+  const includedArtifactManifestPath = join(sessionRoot, INCLUDED_ARTIFACT_MANIFEST_FILE_NAME);
   const worktreeRelativeCwd = relative(repository.sourceRoot, repository.sourceCwd);
   const worktreeCwd = resolve(worktreeRoot, worktreeRelativeCwd);
   assertInside(worktreeRoot, worktreeCwd);
@@ -137,6 +140,12 @@ export async function prepareWorktree(
     for (const path of await listUntrackedFiles(repository.sourceRoot)) {
       await copyUntrackedFile(repository.sourceRoot, worktreeRoot, path);
     }
+    const includedIgnoredArtifacts = await prepareIncludedArtifacts(
+      repository.sourceRoot,
+      repository.sourceCwd,
+      worktreeRoot,
+      includedArtifactManifestPath,
+    );
     await runGit(worktreeRoot, ["add", "--all"]);
     const baselineTree = (await runGit(worktreeRoot, ["write-tree"])).trim();
     const session: WorktreeSession = {
@@ -154,6 +163,7 @@ export async function prepareWorktree(
       reviewPatchPath,
       reviewAttempt: 0,
       retryOf: retrySession?.statePath ?? null,
+      includedIgnoredArtifacts,
     };
     await writeSession(session);
     return session;
@@ -183,11 +193,12 @@ export interface WorktreeInspection {
 
 export async function inspectWorktree(statePath: string): Promise<WorktreeInspection> {
   const session = await readSession(statePath);
+  const includedArtifactPaths = new Set(await readIncludedArtifactManifestPaths(session));
   const tracked = (
     await runGit(session.worktreeRoot, ["diff", "--name-only", "-z", session.baselineTree])
   )
     .split("\0")
-    .filter((path) => path !== "");
+    .filter((path) => path !== "" && !includedArtifactPaths.has(path));
   const staged = (
     await runGit(session.worktreeRoot, [
       "diff",
@@ -199,7 +210,9 @@ export async function inspectWorktree(statePath: string): Promise<WorktreeInspec
   )
     .split("\0")
     .filter((path) => path !== "");
-  const untracked = await listUntrackedFiles(session.worktreeRoot);
+  const untracked = (await listUntrackedFiles(session.worktreeRoot)).filter(
+    (path) => !includedArtifactPaths.has(path),
+  );
   const changedFiles = [...new Set([...tracked, ...untracked])].sort();
   return {
     session,
@@ -236,7 +249,24 @@ export async function createReviewPatch(statePath: string): Promise<ReviewPatch>
       "Qoder changed the temporary Git index; stop rather than generating a review patch.",
     );
   }
-  await runGit(session.worktreeRoot, ["add", "--all"]);
+  const includedArtifactPaths = new Set(await readIncludedArtifactManifestPaths(session));
+  const newFiles = (await listUntrackedFiles(session.worktreeRoot)).filter(
+    (path) => !includedArtifactPaths.has(path),
+  );
+  const stagingPathspecPath = join(session.sessionRoot, "review-staging.pathspec");
+  await runGit(session.worktreeRoot, ["add", "--update"]);
+  if (newFiles.length > 0) {
+    await writeFile(
+      stagingPathspecPath,
+      `${newFiles.map((path) => `:(top,literal)${path}`).join("\0")}\0`,
+      { mode: 0o600 },
+    );
+    await runGit(session.worktreeRoot, [
+      "add",
+      `--pathspec-from-file=${stagingPathspecPath}`,
+      "--pathspec-file-nul",
+    ]);
+  }
   const patch = await runGit(session.worktreeRoot, [
     "diff",
     "--binary",
@@ -288,7 +318,10 @@ export async function reopenReviewWorktree(statePath: string): Promise<ReopenedR
     session.baselineTree,
   ]);
   const unstaged = await runGit(session.worktreeRoot, ["diff", "--name-only", "-z"]);
-  const untracked = await listUntrackedFiles(session.worktreeRoot);
+  const includedArtifactPaths = new Set(await readIncludedArtifactManifestPaths(session));
+  const untracked = (await listUntrackedFiles(session.worktreeRoot)).filter(
+    (path) => !includedArtifactPaths.has(path),
+  );
   if (currentPatch !== savedPatch || unstaged !== "" || untracked.length > 0) {
     throw new WorktreeError(
       "review_state_changed",
@@ -349,6 +382,39 @@ export async function applyReviewPatch(statePath: string): Promise<WorktreeSessi
     throw new WorktreeError(
       "invalid_state",
       "Apply is allowed only after the review patch is ready.",
+    );
+  }
+  const includedArtifactPaths = new Set(await readIncludedArtifactManifestPaths(session));
+  const savedPatch = await readFile(session.reviewPatchPath, "utf8").catch(() => {
+    throw new WorktreeError("invalid_state", "The reviewed patch is missing or unreadable.");
+  });
+  const currentPatch = await runGit(session.worktreeRoot, [
+    "diff",
+    "--binary",
+    "--cached",
+    session.baselineTree,
+  ]);
+  if (savedPatch !== currentPatch) {
+    throw new WorktreeError(
+      "review_state_changed",
+      "The reviewed patch no longer matches the reviewed worktree index.",
+    );
+  }
+  const changedFiles = (
+    await runGit(session.worktreeRoot, [
+      "diff",
+      "--name-only",
+      "--cached",
+      "-z",
+      session.baselineTree,
+    ])
+  )
+    .split("\0")
+    .filter((path) => path !== "");
+  if (changedFiles.some((path) => includedArtifactPaths.has(path))) {
+    throw new WorktreeError(
+      "included_artifact_in_patch",
+      "The reviewed patch contains an included ignored artifact and cannot be applied.",
     );
   }
   try {

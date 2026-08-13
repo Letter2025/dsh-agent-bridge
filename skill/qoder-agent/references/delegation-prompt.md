@@ -35,8 +35,9 @@ material, not Qoder-readable project context.
 3. Read Codex Skills triggered or explicitly selected for the task. Extract
    only implementation guidance that Qoder can apply with its available coding
    tools.
-4. For relevant files outside `qoderCwd`, ignored artifacts, and external Skill
-   files, inline concise non-sensitive rules instead of unavailable paths.
+4. For relevant files outside `qoderCwd`, ignored artifacts not selected by a
+   disclosed `.qoderinclude` snapshot, and external Skill files, inline concise
+   non-sensitive rules instead of unavailable paths.
 5. Remove Skill discovery instructions, Codex tool calls, channel rules,
    approval mechanics, and references to unavailable Figma, image-generation,
    MCP, browser, or connector operations.

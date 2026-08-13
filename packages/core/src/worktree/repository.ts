@@ -50,6 +50,7 @@ export async function copyUntrackedFile(
   assertInside(sourceRoot, sourcePath);
   assertInside(worktreeRoot, targetPath);
   await mkdir(dirname(targetPath), { recursive: true });
+  assertInside(await realpath(worktreeRoot), await realpath(dirname(targetPath)));
   const information = await lstat(sourcePath);
   if (information.isSymbolicLink()) {
     await symlink(await readlink(sourcePath), targetPath);
@@ -61,6 +62,7 @@ export async function copyUntrackedFile(
       "Only regular files and symbolic links can be mirrored.",
     );
   }
+  assertInside(await realpath(sourceRoot), await realpath(sourcePath));
   await copyFile(sourcePath, targetPath, fsConstants.COPYFILE_EXCL);
   await chmod(targetPath, information.mode);
 }
