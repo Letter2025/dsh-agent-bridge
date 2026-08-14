@@ -2,7 +2,7 @@
   "name": "qoder-agent-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "Bridge Qoder into your agent workflow through Skills or MCP.",
+  "description": "Bridge Qoder into your agent workflow through Skills and CLI.",
   "license": "MIT",
   "type": "module",
   "scripts": {

@@ -35,8 +35,6 @@ importers:
 
   packages/core: {}
 
-  packages/mcp-server: {}
-
 packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':

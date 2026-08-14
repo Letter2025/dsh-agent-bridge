@@ -59,14 +59,4 @@ export default defineConfig([
       alwaysBundle: ["@qoder-agent-bridge/core"],
     },
   },
-  {
-    entry: "packages/mcp-server/src/index.ts",
-    outDir: "packages/mcp-server/dist",
-    outExtensions: outputExtensions,
-    format: ["esm"],
-    dts: true,
-    sourcemap: true,
-    treeshake: false,
-    clean: true,
-  },
 ]);
