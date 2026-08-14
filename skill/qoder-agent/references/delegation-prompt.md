@@ -135,6 +135,11 @@ task-scoped authorization. Do not put that authorization request inside the
 delegation brief sent to Qoder. Brief Review `off` does not waive this separate
 gate.
 
+Follow `SKILL.md`'s decision table before choosing the UI: use Brief Review
+only after an already-authorized transfer, otherwise combine it with transfer
+authorization. Render the same decision as a card or text fallback, then
+re-present changed decision-relevant fields.
+
 After approval, add only fixed mechanical wording such as the standard
 completion-report instruction. Re-present the preview if any listed field
 changes. Approval authorizes one Qoder execution with that brief, not patch

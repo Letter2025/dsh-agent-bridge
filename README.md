@@ -34,6 +34,9 @@ semantics; those findings will shape any later MCP design.
 - Three-state Brief Review (Spec) policy: explicit `required` and `off` modes,
   plus risk-based `auto` mode by default. Spec mode previews the delegation
   brief; it is not OpenSpec generation.
+- Card-first, text-fallback confirmation for initial external Qoder data
+  authorization and Brief Review when the host exposes structured user input;
+  no fixed authorization phrase is required in the text fallback.
 - Narrow working-directory and fixed safety boundaries that prohibit writes
   outside `cwd`, credential handling, publication, and Git-history operations.
 - Temporary detached worktrees for code-changing tasks, exact Qoder-only patch

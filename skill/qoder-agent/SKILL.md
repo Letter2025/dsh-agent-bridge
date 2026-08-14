@@ -43,6 +43,28 @@ For a simple non-code task, load only the references whose conditions apply.
 For code changes, `worktree-review.md` and `protocol.md` are always required;
 `delegation-prompt.md` remains conditional.
 
+## Prefer Structured Pre-Execution Confirmation
+
+For each initial or review-driven correction run, choose the required decision
+before choosing its UI:
+
+| Brief Review                   | Transfer authorized | Required decision                                     |
+| ------------------------------ | ------------------- | ----------------------------------------------------- |
+| `off` or no `auto` preview     | no                  | External-data authorization                           |
+| `required` or `auto` preview   | no                  | Combined Brief Review and external-data authorization |
+| `required` or `auto` preview   | yes                 | Brief Review only                                     |
+| `off` or no `auto` preview     | yes                 | Continue to native host-execution approval            |
+
+Render that decision with `request_user_input` when the host exposes it;
+otherwise ask the matching question in clear, localized text without a magic
+authorization phrase. Proceed only on an unambiguous displayed choice; ask
+again for vague replies. Do not assume this tool or its card UI exists.
+
+Keep native host-execution, patch-application, failed-Runner recovery, and
+session-discard confirmations unchanged. Reauthorization after a scope change
+or failed run also keeps its existing text confirmation, even if the tool is
+available.
+
 ## Authorize External Data Transfer
 
 Treat Qoder as an external service. Before the first Runner invocation, obtain
@@ -55,17 +77,15 @@ explicit task-scoped authorization to send:
 An instruction to use Qoder or approval of the objective, host command, or a
 correction does not alone authorize this transfer. If the conversation already
 explicitly authorizes sending these data categories to Qoder, do not ask again.
-Otherwise, combine this disclosure with any required brief preview and wait:
 
-```text
-Approving this Qoder delegation authorizes sending the task brief and the
-task-required files under <qoderCwd>, including private repository source and
-the listed OpenSpec/specification context, to Qoder's external service. This
-authorization covers the initial run and at most two review-driven correction
-runs with the same objective, data categories, qoderCwd, and change scope. It
-does not authorize credentials or secrets, unrelated files, a wider scope,
-failed-run recovery, or applying the resulting patch.
-```
+Otherwise, disclose the objective; external data categories and selected roots,
+count, and bytes; `qoderCwd`; writable paths; and exclusions. State that the
+authorization covers the initial run plus at most two same-scope corrections,
+not credentials, secrets, unrelated files, wider scope, recovery, or patch
+application. If `request_user_input` is available, offer `Authorize and
+continue`, `Do not authorize`, and `Adjust scope`; the last two send no data.
+Use the same three actions in the text fallback. When Brief Review is required,
+use its combined confirmation instead.
 
 This gate applies even when Brief Review is `off`. Never send credentials,
 secrets, ignored local artifacts, or unrelated content. Obtain new
@@ -185,6 +205,14 @@ scope and `qoderCwd`, acceptance criteria, verification, and material
 assumptions or stop conditions. Re-present it after a material change. Combine
 the data disclosure with this preview when both need approval. Neither brief
 approval nor transfer authorization permits patch application.
+
+After an already-authorized transfer, offer `Approve brief and continue`,
+`Modify brief`, and `Cancel`. Otherwise, combine the preview and authorization
+summary, then offer `Approve brief and authorize`, `Do not approve`, and
+`Modify brief or scope`; only the first both approves the brief and authorizes
+transfer. Use the same actions in the card and text paths. Re-present the
+affected preview or summary after any change to the objective, data,
+`qoderCwd`, scope, acceptance criteria, assumptions, or stop conditions.
 
 Approval is valid only for the previewed decision-relevant fields. Mechanical
 wording such as the standard completion report may be added afterward; a new

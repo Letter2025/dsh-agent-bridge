@@ -69,8 +69,9 @@ complete objective, required context, compiled rules, scope, acceptance
 criteria, verification, assumptions, and stop conditions. Direct Qoder to
 inspect and repair the existing uncommitted changes; never send a findings-only
 brief or rely on prior session memory. Store each correction brief under a
-distinct filename and reapply Brief Review. Under `auto`, a precise in-scope
-correction does not itself require another preview; `required` still does.
+distinct filename and reapply Brief Review. Treat external transfer as already
+authorized under `SKILL.md`'s decision policy: `required` uses Brief Review
+only, while a precise in-scope `auto` correction needs no preview.
 
 Stop without correction when the finding requires a material user decision,
 scope expansion, or a third correction run. Runner failures follow the normal

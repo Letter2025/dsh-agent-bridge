@@ -28,6 +28,8 @@ Skill 的需求、使用约束和审阅语义，这些结论将作为后续 MCP 
   专业规则。
 - 三态 Brief Review（Spec）策略：支持显式 `required`、`off`，默认使用基于风险
   判断的 `auto`；Spec 模式用于预览委派 brief，不等同于生成 OpenSpec。
+- 首次向外部 Qoder 外发数据及 Brief Review 在宿主支持结构化用户输入时优先使用
+  卡片确认；不支持时回退为文本确认，且无需回复固定授权文案。
 - 最窄工作目录和固定安全策略，禁止写出 `cwd`、处理凭证、发布内容以及执行
   Git 历史相关操作。
 - 代码修改任务使用临时 detached worktree，可生成精确的 Qoder-only patch、独立
