@@ -2,30 +2,34 @@
 
 [简体中文](README.zh-CN.md)
 
-Bridge Qoder into an agent workflow through bounded, one-shot Codex Skills.
-The current milestone focuses exclusively on refining the reusable
-`qoder-agent` Skill, its local Qoder CLI Runner, and `qoder-worker` compatibility
-entry point. The goal is to stabilize the delegation contract, safety boundary,
-context model, and product requirements before building another integration
-surface.
+Qoder Agent Bridge is a Skill-and-CLI coding harness that brings Qoder into an
+agent workflow through bounded, one-shot executions. The core workflow is a
+structured loop: the main agent plans the task, Qoder executes it, the main
+agent reviews the result, and Qoder repairs the issues found in review. The
+loop continues until the result is accepted or the bounded workflow stops. By
+separating planning and review and adding a cross-check, it improves coding
+quality while keeping each coding execution bounded and auditable.
+
+The reusable `qoder-agent` Skill and local Qoder CLI Runner are the primary
+implementation. The design also leaves room for other agents that satisfy the
+OpenAI Skill conventions to be plugged into the same harness.
 
 ## Feature status
 
-| Feature                    | Status                                                                    |
-| -------------------------- | ------------------------------------------------------------------------- |
-| Codex Skill integration    | Current focus; implemented and actively being refined                     |
-| MCP integration            | Planned feature; development begins only after the Skill contract matures |
-| ACP integration            | Planned feature; no implementation work is scheduled in the current phase |
-| Rich session orchestration | Future consideration; not part of the current one-shot Skill milestone    |
-
-MCP and ACP are product directions, not current capabilities. This phase will
-first collect and validate Skill requirements, usage constraints, and review
-semantics; those findings will shape any later MCP design.
+| Feature                                  | Status                                                       |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| Skill + CLI coding harness               | Current focus; implemented and actively being refined        |
+| Main-agent planning and review            | Core workflow; drives execution, acceptance, and repair       |
+| Planning → execution → review → repair loop | Core direction; improves results through structured review |
+| Additional Skill-compatible agents       | Extensible direction; can be integrated into the same harness |
 
 ## Current Skill features
 
 - One-shot, non-interactive delegation through the local Qoder CLI, with
   `qoder-worker` available as a compatibility alias.
+- A structured execution loop in which the main agent plans, Qoder implements,
+  the main agent reviews, and Qoder repairs until the result is accepted or the
+  bounded workflow stops.
 - Context-aware delegation briefs compiled by Codex from applicable project
   instructions, OpenSpec artifacts, specifications, and portable guidance from
   installed Codex Skills. Qoder does not need those Skills installed.
@@ -88,6 +92,15 @@ On Windows, configure the native `qodercli.exe`; command shims such as
 The Runner never guesses an installation path beneath a user's home directory.
 It records the Qoder version used during verification but does not hard-fail on
 a different CLI version.
+
+## Enable `request_user_input` in Codex
+
+In a Codex environment, enable `request_user_input` support in `config.toml`:
+
+```ini
+[features]
+default_mode_request_user_input = true
+```
 
 ## Install the Skill
 

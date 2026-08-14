@@ -2,26 +2,29 @@
 
 [English](README.md)
 
-通过受边界约束的一次性 Codex Skill 将本机 Qoder 接入 Agent 工作流。
-当前阶段只聚焦于打磨可复用的 `qoder-agent` Skill、本地 Qoder CLI Runner，以及
-兼容 worker 式委派的 `qoder-worker` 入口。现阶段的目标是先稳定委派契约、安全
-边界、上下文模型并整理完整需求，再开发其他集成形态。
+Qoder Agent Bridge 是一个由 Skill 和 CLI 构成的编码 Harness，通过受边界约束的
+一次性执行将本机 Qoder 接入 Agent 工作流。核心流程是一个结构化 loop：主 Agent 负责规划，
+Qoder 负责执行，主 Agent 负责审阅，再由 Qoder 根据审阅结果修复，循环直到结果通过验收或达
+到有界流程的停止条件。通过拆分规划与审阅，引入交叉审查，提升编码结果的质量，同时让每次编码执
+行都保持可控、可审计。
+
+当前的主要实现是可复用的 `qoder-agent` Skill 和本地 Qoder CLI Runner；后续也可以
+接入其他满足 OpenAI Skill 规范的 Agent，共用这套 Harness。
 
 ## Feature 状态
 
-| Feature          | 状态                                            |
-| ---------------- | ----------------------------------------------- |
-| Codex Skill 集成 | 当前重点；已实现并持续打磨                      |
-| MCP 集成         | 规划中的 Feature；待 Skill 契约成熟后再考虑开发 |
-| ACP 集成         | 规划中的 Feature；当前阶段暂不安排实现          |
-| 完整会话编排     | 后续方向；不属于当前 one-shot Skill 阶段        |
-
-MCP 和 ACP 是产品规划方向，并非当前已经提供的能力。当前阶段会优先收集并验证
-Skill 的需求、使用约束和审阅语义，这些结论将作为后续 MCP 设计的输入。
+| Feature                    | 状态                                       |
+| -------------------------- | ------------------------------------------ |
+| Skill + CLI 编码 Harness   | 当前重点；已实现并持续打磨                 |
+| 主 Agent 规划与审阅        | 核心流程；负责执行、验收和修复驱动         |
+| 规划 → 执行 → 审阅 → 修复 loop | 核心方向；通过结构化审阅提升结果质量     |
+| 其他 Skill 兼容 Agent      | 可扩展方向；可接入同一套 Harness           |
 
 ## 当前 Skill 支持的特性
 
 - 通过本地 Qoder CLI 进行 one-shot、非交互式委派；`qoder-worker` 提供兼容别名。
+- 结构化执行 loop：主 Agent 规划，Qoder 执行，主 Agent 审阅，Qoder 修复，直到结果
+  通过验收或有界流程停止。
 - 由 Codex 从适用的项目说明、OpenSpec 产物、规格文件以及已安装 Codex Skill
   中提炼规则，生成上下文完整的委派 brief；Qoder 无需安装或理解这些 Skill。
 - 渐进式 brief：简单任务只使用精简基础契约，仅在确有需要时加入项目上下文和
@@ -73,6 +76,15 @@ Skill 的需求、使用约束和审阅语义，这些结论将作为后续 MCP 
 下的安装位置。在 Windows 上必须配置原生 `qodercli.exe`；Runner 会拒绝
 `qodercli.cmd`、`qodercli.bat` 等命令 shim，以便保持 `shell: false` 和参数边界。
 Runner 会记录验证时使用的 Qoder 版本，但不会因版本不同而硬失败。
+
+## 在 Codex 中开启 `request_user_input`
+
+在 Codex 环境中，可以在 `config.toml` 中开启 `request_user_input` 支持：
+
+```ini
+[features]
+default_mode_request_user_input = true
+```
 
 ## 安装 Skill
 
