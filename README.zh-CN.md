@@ -13,12 +13,12 @@ Qoder 负责执行，主 Agent 负责审阅，再由 Qoder 根据审阅结果修
 
 ## Feature 状态
 
-| Feature                    | 状态                                       |
-| -------------------------- | ------------------------------------------ |
-| Skill + CLI 编码 Harness   | 当前重点；已实现并持续打磨                 |
-| 主 Agent 规划与审阅        | 核心流程；负责执行、验收和修复驱动         |
-| 规划 → 执行 → 审阅 → 修复 loop | 核心方向；通过结构化审阅提升结果质量     |
-| 其他 Skill 兼容 Agent      | 可扩展方向；可接入同一套 Harness           |
+| Feature                        | 状态                                 |
+| ------------------------------ | ------------------------------------ |
+| Skill + CLI 编码 Harness       | 当前重点；已实现并持续打磨           |
+| 主 Agent 规划与审阅            | 核心流程；负责执行、验收和修复驱动   |
+| 规划 → 执行 → 审阅 → 修复 loop | 核心方向；通过结构化审阅提升结果质量 |
+| 其他 Skill 兼容 Agent          | 可扩展方向；可接入同一套 Harness     |
 
 ## 当前 Skill 支持的特性
 
@@ -33,8 +33,8 @@ Qoder 负责执行，主 Agent 负责审阅，再由 Qoder 根据审阅结果修
   判断的 `auto`；Spec 模式用于预览委派 brief，不等同于生成 OpenSpec。
 - 首次向外部 Qoder 外发数据及 Brief Review 在宿主支持结构化用户输入时优先使用
   卡片确认；不支持时回退为文本确认，且无需回复固定授权文案。
-- 最窄工作目录和固定安全策略，禁止写出 `cwd`、处理凭证、发布内容以及执行
-  Git 历史相关操作。
+- 继承 Codex session 宿主目录的工作目录和固定安全策略，禁止写出 `cwd`、处理凭证、
+  发布内容以及执行 Git 历史相关操作。
 - 代码修改任务使用临时 detached worktree，可生成精确的 Qoder-only patch、独立
   审阅、执行冲突预检，并在应用到源 worktree 前等待明确批准。
 - 使用 prompt 文件安全传递生成的或多行 brief，进行有界、文件身份校验的读取，
@@ -51,8 +51,8 @@ Qoder 负责执行，主 Agent 负责审阅，再由 Qoder 根据审阅结果修
 - 代码修改的 worktree 隔离要求 Git 仓库已有 `HEAD` commit 且不存在 unmerged
   path；ignored 文件默认不可用，仓库根目录的 `.qoderinclude` 可显式快照本地存在的
   ignored 构建输入候选；该配置与文件都不是硬依赖。
-- `cwd` 必须保持为真实写入范围的最窄边界。位于边界外的上下文应由 Codex 提炼进
-  brief，不能为了让 Qoder 读取而扩大其可写范围。
+- `cwd` 继承 Codex 当前 session 的授权目录，通常是仓库根目录。预期修改范围应在
+  brief 中单独声明；不能为了让 Qoder 读取上下文而越过宿主目录边界。
 - brief 审批只授权执行一次 Qoder 任务；把审阅后的 patch 应用到源 worktree 始终
   需要另一次明确批准。
 - 本机必须已具备 Qoder 登录状态以及任务所需的 host/network 条件。执行失败时先停止，
@@ -102,12 +102,13 @@ cp -R skill/qoder-worker /path/to/project/.codex/skills/qoder-worker
 
 ## 运行 Runner
 
-命令必须提供能覆盖预期改动的最窄绝对目录，以及有边界的任务 brief。请使用
-非 shell 的编辑器或文件写入工具，把生成的或多行 brief 写入私有文件：
+对于 worktree 任务，应将 Codex 当前 session 已授权的 `hostCwd` 传给 coordinator，
+再将 coordinator 返回的 `qoderCwd` 传给 Runner。预期修改范围应在 brief 中单独声明。
+请使用非 shell 的编辑器或文件写入工具，把生成的或多行 brief 写入私有文件：
 
 ```sh
 node skill/qoder-agent/scripts/run_qoder.mjs \
-  --cwd /absolute/path/to/task-scope \
+  --cwd /absolute/path/to/qoderCwd \
   --prompt-file /absolute/path/to/delegation-brief.md
 ```
 

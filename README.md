@@ -16,12 +16,12 @@ OpenAI Skill conventions to be plugged into the same harness.
 
 ## Feature status
 
-| Feature                                  | Status                                                       |
-| ---------------------------------------- | ------------------------------------------------------------ |
-| Skill + CLI coding harness               | Current focus; implemented and actively being refined        |
-| Main-agent planning and review            | Core workflow; drives execution, acceptance, and repair       |
-| Planning → execution → review → repair loop | Core direction; improves results through structured review |
-| Additional Skill-compatible agents       | Extensible direction; can be integrated into the same harness |
+| Feature                                     | Status                                                        |
+| ------------------------------------------- | ------------------------------------------------------------- |
+| Skill + CLI coding harness                  | Current focus; implemented and actively being refined         |
+| Main-agent planning and review              | Core workflow; drives execution, acceptance, and repair       |
+| Planning → execution → review → repair loop | Core direction; improves results through structured review    |
+| Additional Skill-compatible agents          | Extensible direction; can be integrated into the same harness |
 
 ## Current Skill features
 
@@ -41,8 +41,9 @@ OpenAI Skill conventions to be plugged into the same harness.
 - Card-first, text-fallback confirmation for initial external Qoder data
   authorization and Brief Review when the host exposes structured user input;
   no fixed authorization phrase is required in the text fallback.
-- Narrow working-directory and fixed safety boundaries that prohibit writes
-  outside `cwd`, credential handling, publication, and Git-history operations.
+- Codex-session-inherited working-directory and fixed safety boundaries that
+  prohibit writes outside `cwd`, credential handling, publication, and
+  Git-history operations.
 - Temporary detached worktrees for code-changing tasks, exact Qoder-only patch
   generation, independent review, conflict preflight, and explicit approval
   before applying changes to the source worktree.
@@ -61,9 +62,9 @@ OpenAI Skill conventions to be plugged into the same harness.
   commit and no unmerged paths. Ignored files are unavailable by default; a
   root `.qoderinclude` can optionally snapshot ignored build inputs when they
   exist locally.
-- Keep `cwd` at the narrowest real write boundary. Context outside it must be
-  summarized into the brief rather than exposed by widening Qoder's writable
-  scope.
+- Inherit `cwd` from Codex's authorized session directory, normally the
+  repository root. Keep the expected task changes narrower in the brief; never
+  widen Qoder beyond the host session boundary merely to expose context.
 - Brief approval authorizes one Qoder execution only. Applying the reviewed
   patch to the source worktree always requires separate explicit approval.
 - Qoder authentication and any required host/network access must already be
@@ -119,13 +120,14 @@ the co-installed `qoder-agent`; keep the executable bit on its
 
 ## Run the Runner
 
-The public command requires the narrowest absolute directory that contains the
-expected changes and a bounded task brief. Write generated or multiline briefs
-to a private file with a non-shell editor or file-writing tool:
+For a worktree task, pass the Codex session's authorized `hostCwd` to the
+coordinator and pass its returned `qoderCwd` to the Runner. The brief should
+separately declare the narrower expected task changes. Write generated or
+multiline briefs to a private file with a non-shell editor or file-writing tool:
 
 ```sh
 node skill/qoder-agent/scripts/run_qoder.mjs \
-  --cwd /absolute/path/to/task-scope \
+  --cwd /absolute/path/to/qoderCwd \
   --prompt-file /absolute/path/to/delegation-brief.md
 ```
 

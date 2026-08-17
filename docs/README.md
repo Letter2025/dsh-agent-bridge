@@ -8,10 +8,14 @@ native Codex subagent.
 
 ## Operating contract
 
-- Use `node skill/qoder-agent/scripts/run_qoder.mjs --cwd <narrow-absolute-path> --prompt-file <absolute-brief-path>`.
+- For worktree tasks, pass the Codex session's authorized `hostCwd` to
+  `qoder_worktree.mjs prepare --cwd`, then pass the returned `qoderCwd` to
+  `run_qoder.mjs --cwd`.
 - Keep `cwd` outside the Runner's implicit state; no current-directory fallback exists.
-- Keep `cwd` at the narrowest real write boundary. Compile relevant context into
-  the brief instead of widening the writable directory merely so Qoder can read it.
+- Keep the host boundary inherited from the Codex session. Declare the narrower
+  task modification scope in the brief instead of deriving `hostCwd` from the
+  expected changed files. If the host session is limited to a subdirectory,
+  Qoder must not access files outside it.
 - Write generated or multiline briefs with a non-shell file-writing tool. Never
   interpolate them into a shell command; inline `--prompt` is compatibility-only.
 - Make `qodercli` available on `PATH` for the Codex process, or configure an
@@ -24,7 +28,7 @@ native Codex subagent.
   in the same prepared worktree; create a fresh linked retry only for a clean
   restart or unsafe state.
 - Never ask Qoder to commit, push, publish, reset, clean, or edit outside the
-  explicit task directory.
+  explicit task scope. The Runner still prevents writes outside `qoderCwd`.
 
 ## Installation
 

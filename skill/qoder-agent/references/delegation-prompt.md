@@ -19,11 +19,16 @@ Brief Review policy live in `SKILL.md`.
 - Qoder follows the resulting self-contained brief. It does not select, invoke,
   or require Codex Skills.
 - The Runner enforces its fixed safety policy independently. No brief, Skill,
-  project instruction, or specification may relax it or widen `qoderCwd`.
+  project instruction, or specification may relax it or widen the Codex
+  session's `hostCwd` boundary.
 
-Choose `qoderCwd` from the files the task may actually change. Never widen it
-only to expose context. A file outside that boundary is Codex-readable source
-material, not Qoder-readable project context.
+Let `hostCwd` be the Codex session's authorized directory; normally this is the
+repository root. Pass `hostCwd` to `qoder_worktree.mjs prepare --cwd`, then use
+the returned temporary-worktree `qoderCwd` for the Runner. Do not choose
+`hostCwd` from the files the task may actually change, and do not widen it
+merely to expose context. Keep the narrower task modification scope in the
+brief. A file outside the host boundary is Codex-readable source material, not
+Qoder-readable project context.
 
 ## Compile Context
 
@@ -125,7 +130,7 @@ preview derived from the actual brief. Include every decision-relevant field:
 
 - objective;
 - required context and compiled rules, when present;
-- change scope and `qoderCwd`;
+- host `hostCwd`, returned `qoderCwd`, and narrower `taskScope`;
 - acceptance criteria and verification;
 - material assumptions, decisions, and task-specific stop conditions.
 

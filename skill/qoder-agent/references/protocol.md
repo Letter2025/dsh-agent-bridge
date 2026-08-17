@@ -16,9 +16,12 @@ run_qoder.mjs --cwd <absolute-path> \
 ```
 
 `--cwd` and exactly one of `--prompt-file` or `--prompt` are mandatory. `cwd`
-must be an existing absolute directory and is normalized with `realpath`. It
-should be the narrowest actual write boundary for the task, not a broader
-directory chosen merely to expose read-only context.
+must be an existing absolute directory and is normalized with `realpath`. For
+Skill-driven work, pass the Codex session's authorized `hostCwd` to
+`qoder_worktree.mjs prepare --cwd`, then pass the returned temporary-worktree
+`qoderCwd` to this Runner. The delegation brief may declare a narrower task
+modification scope, but callers must not replace `hostCwd` with that narrower
+scope or silently widen the host boundary merely to expose context.
 
 `--prompt-file` is the default interface for generated or multiline briefs.
 Its path must be absolute and identify a readable, non-symbolic-link regular

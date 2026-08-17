@@ -178,6 +178,48 @@ describe("Qoder isolated worktree coordinator", () => {
     );
   });
 
+  it("copies ignored schemas when the host cwd is the repository root", async () => {
+    const root = await createFixture();
+    const schemaPath = "packages/api/src/schemas/api.gen.ts";
+    await mkdir(join(root, "packages/api/src/schemas"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "/**/schemas/**.gen.ts\n");
+    await writeFile(join(root, ".qoderinclude"), "packages/api/src/schemas/**\n");
+    await writeFile(join(root, schemaPath), "export type Api = string;\n");
+    git(root, ["add", ".gitignore", ".qoderinclude"]);
+    git(root, ["commit", "-m", "configure root schema context"]);
+
+    const session = await prepareWorktree(root);
+    expect(session.includedIgnoredArtifacts).toMatchObject({ fileCount: 1 });
+    expect(await readFile(join(session.worktreeRoot, schemaPath), "utf8")).toBe(
+      "export type Api = string;\n",
+    );
+    await disposeWorktree(session.statePath, true);
+  });
+
+  it("does not copy ignored schemas outside a nested host cwd", async () => {
+    const root = await createFixture();
+    const hostCwd = join(root, "web/datav/src/pages/335823/instructor");
+    const schemaPath = "packages/api/src/schemas/api.gen.ts";
+    await mkdir(hostCwd, { recursive: true });
+    await writeFile(join(hostCwd, "placeholder.ts"), "export {}\n");
+    await mkdir(join(root, "packages/api/src/schemas"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "/**/schemas/**.gen.ts\n");
+    await writeFile(join(root, ".qoderinclude"), "packages/api/src/schemas/**\n");
+    await writeFile(join(root, schemaPath), "export type Api = string;\n");
+    git(root, ["add", ".gitignore", ".qoderinclude", "web"]);
+    git(root, ["commit", "-m", "configure nested host context"]);
+
+    const session = await prepareWorktree(hostCwd);
+    expect(session.includedIgnoredArtifacts).toMatchObject({ fileCount: 0, totalBytes: 0 });
+    expect(await pathExists(join(session.worktreeRoot, schemaPath))).toBe(false);
+    expect(
+      await pathExists(
+        join(session.worktreeRoot, "web/datav/src/pages/335823/instructor/placeholder.ts"),
+      ),
+    ).toBe(true);
+    await disposeWorktree(session.statePath, true);
+  });
+
   it("treats a missing or empty include config as no operation", async () => {
     const missingRoot = await createFixture();
     const missing = await prepareWorktree(missingRoot);
