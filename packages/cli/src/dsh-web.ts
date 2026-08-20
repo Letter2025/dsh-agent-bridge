@@ -37,7 +37,8 @@ interface ParsedWebArgs {
 
 function parsePositiveInteger(value: string | undefined, option: string): number | undefined {
   if (value === undefined) return undefined;
-  if (!/^\d+$/u.test(value)) throw new DshWebError("invalid_input", `${option} must be an integer.`);
+  if (!/^\d+$/u.test(value))
+    throw new DshWebError("invalid_input", `${option} must be an integer.`);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new DshWebError("invalid_input", `${option} must be a positive integer.`);
@@ -110,11 +111,20 @@ export function parseWebArgs(argv: string[]): ParsedWebArgs {
     }
   } else {
     if (parsed.state === undefined || !isAbsolute(parsed.state)) {
-      throw new DshWebError("invalid_input", `${parsed.command} requires an absolute --state path.`);
+      throw new DshWebError(
+        "invalid_input",
+        `${parsed.command} requires an absolute --state path.`,
+      );
     }
   }
-  if (parsed.command === "run" && (parsed.prompt === undefined) === (parsed.promptFile === undefined)) {
-    throw new DshWebError("invalid_input", "run requires exactly one of --prompt or --prompt-file.");
+  if (
+    parsed.command === "run" &&
+    (parsed.prompt === undefined) === (parsed.promptFile === undefined)
+  ) {
+    throw new DshWebError(
+      "invalid_input",
+      "run requires exactly one of --prompt or --prompt-file.",
+    );
   }
   if (parsed.force && parsed.command !== "remove") {
     throw new DshWebError("invalid_input", "--force is valid only for remove.");
@@ -189,19 +199,18 @@ export async function executeWebCommand(
     } else if (parsed.command === "inspect") {
       value = await inspectWebWorktree(parsed.state as string);
     } else {
-      value = await runWebWorktreeCommand(
-        parsed.state as string,
-        parsed.command,
-        {
-          ...(parsed.message === undefined ? {} : { message: parsed.message }),
-          ...(parsed.force ? { force: true } : {}),
-          ...(signal === undefined ? {} : { signal }),
-        },
-      );
+      value = await runWebWorktreeCommand(parsed.state as string, parsed.command, {
+        ...(parsed.message === undefined ? {} : { message: parsed.message }),
+        ...(parsed.force ? { force: true } : {}),
+        ...(signal === undefined ? {} : { signal }),
+      });
     }
     const succeeded =
       parsed.command !== "run" ||
-      (typeof value === "object" && value !== null && "status" in value && value.status === "succeeded");
+      (typeof value === "object" &&
+        value !== null &&
+        "status" in value &&
+        value.status === "succeeded");
     const envelope: Record<string, unknown> = {
       protocolVersion: 1,
       runnerVersion: "0.2.0",
@@ -211,7 +220,11 @@ export async function executeWebCommand(
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
       value,
     };
-    return { envelope, exitCode: succeeded ? 0 : 1, ...(resultFile === undefined ? {} : { resultFile }) };
+    return {
+      envelope,
+      exitCode: succeeded ? 0 : 1,
+      ...(resultFile === undefined ? {} : { resultFile }),
+    };
   } catch (error) {
     return {
       envelope: {
@@ -246,7 +259,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       process.exitCode = 1;
       return;
     }
-    process.stderr.write(`[dsh_web] ${parsed.command} running; wait for the final JSON envelope.\n`);
+    process.stderr.write(
+      `[dsh_web] ${parsed.command} running; wait for the final JSON envelope.\n`,
+    );
     const result = await executeWebCommand(parsed, controller.signal);
     if (result.resultFile !== undefined) {
       await persistResult(result.resultFile, result.envelope).catch(() => {

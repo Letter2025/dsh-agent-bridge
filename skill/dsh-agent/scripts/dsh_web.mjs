@@ -170,7 +170,7 @@ var DshWebClient = class {
 		if (!Number.isSafeInteger(this.maxResponseBytes) || this.maxResponseBytes <= 0) throw new DshWebError("invalid_input", "maxResponseBytes must be a positive integer.");
 	}
 	async call(method, payload, signal) {
-		if (!/^[a-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)+$/u.test(method)) throw new DshWebError("invalid_input", "Invalid DSH Web RPC method.");
+		if (!/^[a-z][A-Za-z0-9]*(?:[./][A-Za-z][A-Za-z0-9]*)+$/u.test(method)) throw new DshWebError("invalid_input", "Invalid DSH Web RPC method.");
 		const rpcId = `codex-bridge-${this.mintRpcId()}`;
 		const body = JSON.stringify({
 			type: "client-request",
@@ -270,6 +270,22 @@ var DshWebClient = class {
 			text: command.text
 		};
 		return result;
+	}
+	async command(sessionId, line, signal) {
+		if (!line.startsWith("/") || line.includes("\0")) throw new DshWebError("invalid_input", "DSH command must be one slash-command line.");
+		const rawValue = await this.call("commands/execute", { args: {
+			agentId: sessionId,
+			line,
+			images: []
+		} }, signal);
+		if (rawValue === void 0) return { matched: false };
+		const result = requireRecord(requireRecord(rawValue, "DSH command endpoint returned an invalid value.").result, "DSH command endpoint omitted its result.");
+		if (result.kind === "error") throw new DshWebError("command_error", typeof result.text === "string" ? result.text : "DSH command failed.");
+		if (result.kind !== "success") throw new DshWebError("web_protocol_error", "DSH command endpoint returned an invalid result.");
+		return typeof result.text === "string" ? {
+			matched: true,
+			text: result.text
+		} : { matched: true };
 	}
 	async cancel(sessionId, signal) {
 		if (requireRecord(await this.call("session.cancel", { sessionId }, signal), "DSH Web session.cancel returned an invalid value.").accepted !== true) throw new DshWebError("web_protocol_error", "DSH Web did not accept cancellation.");
@@ -475,19 +491,23 @@ function parseWorktreeList(output) {
 		return result;
 	}).filter((entry) => entry.path !== "");
 }
-async function requirePreparedWorktree(state) {
-	if (state.phase !== "prepared") throw new DshWebError("invalid_phase", `Web workflow is already ${state.phase}.`);
+async function requireWorktreeExists(state) {
+	if (state.phase === "removed") throw new DshWebError("invalid_phase", "Web workflow worktree was already removed.");
 	const root = await realpath(state.worktreePath).catch(() => null);
 	if (root === null || resolve(root) !== resolve(state.worktreePath)) throw new DshWebError("worktree_missing", "Managed DSH worktree no longer exists.");
 	const actualRoot = (await runGit(root, ["rev-parse", "--show-toplevel"])).trim();
 	if (resolve(actualRoot) !== resolve(root)) throw new DshWebError("worktree_invalid", "Managed DSH worktree root does not match Git.");
 }
+async function requirePreparedWorktree(state) {
+	if (state.phase !== "prepared") throw new DshWebError("invalid_phase", `Web workflow is already ${state.phase}.`);
+	await requireWorktreeExists(state);
+}
 async function runSlashCommand(client, sessionId, command, signal) {
-	const text = (await client.prompt(sessionId, command, signal)).command?.text;
-	if (typeof text !== "string" || text.trim() === "") throw new DshWebError("command_result_missing", `DSH did not return a command result for ${command.split(/\s+/u)[0] ?? "command"}.`);
+	const response = await client.command(sessionId, command, signal);
+	if (!response.matched || typeof response.text !== "string" || response.text.trim() === "") throw new DshWebError("command_result_missing", `DSH did not return a command result for ${command.split(/\s+/u)[0] ?? "command"}.`);
 	return {
 		command,
-		text
+		text: response.text
 	};
 }
 async function prepareWebWorktree(options, dependencies = {}) {
@@ -497,6 +517,12 @@ async function prepareWebWorktree(options, dependencies = {}) {
 	const repository = await resolveRepository(options.cwd);
 	const repoRoot = await realpath(repository.sourceRoot);
 	const hostCwd = await realpath(repository.sourceCwd);
+	if ((await runGit(repoRoot, [
+		"status",
+		"--porcelain=v1",
+		"-z",
+		"--untracked-files=all"
+	])).length !== 0) throw new DshWebError("source_dirty", "DSH Web worktree preparation requires a clean source worktree so the plugin checkout matches the reviewed HEAD.");
 	const namespaceRoot = resolve(repoRoot, worktreeDirName);
 	const expectedWorktreePath = resolve(namespaceRoot, "worktree", ...options.name.split("/"));
 	assertInside(namespaceRoot, expectedWorktreePath);
@@ -665,7 +691,7 @@ async function inspectWebWorktree(statePath) {
 		state,
 		exists: false
 	};
-	await requirePreparedWorktree(state);
+	await requireWorktreeExists(state);
 	return {
 		state,
 		exists: true,
@@ -681,7 +707,8 @@ async function inspectWebWorktree(statePath) {
 }
 async function runWebWorktreeCommand(statePath, action, options = {}, dependencies = {}) {
 	const state = await loadWebWorkflowState(statePath);
-	if (action !== "status") await requirePreparedWorktree(state);
+	if (action === "bring-back") await requirePreparedWorktree(state);
+	if (action === "remove") await requireWorktreeExists(state);
 	const client = dependencies.client ?? new DshWebClient(state.webUrl);
 	let command;
 	if (action === "status") command = `/worktree status ${state.worktreeName}`;
@@ -762,6 +789,9 @@ function parseWebArgs(argv) {
 async function persistResult(path, value) {
 	const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
 	try {
+		await unlink(path).catch((error) => {
+			if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+		});
 		await writeFile(temporary, `${JSON.stringify(value)}\n`, {
 			encoding: "utf8",
 			mode: 384,

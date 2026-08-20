@@ -44,12 +44,12 @@ settings, or fall back to headless without explicit authorization.
 
 ## Load references progressively
 
-| Condition | Required reference | Purpose |
-| --- | --- | --- |
-| Every Web invocation | `references/protocol.md` | RPC, CLI, state, validation, and failure contract |
-| Every code-changing task | `references/worktree-review.md` | Prepare, review, correction, bring-back, and removal lifecycle |
-| Project rules, specifications, OpenSpec, external context, or Skill guidance | `references/delegation-prompt.md` | Compile a self-contained brief |
-| User explicitly requests the old one-shot mode | `references/headless-protocol.md` and `references/legacy-worktree-review.md` | Legacy compatibility only |
+| Condition                                                                    | Required reference                                                           | Purpose                                                        |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Every Web invocation                                                         | `references/protocol.md`                                                     | RPC, CLI, state, validation, and failure contract              |
+| Every code-changing task                                                     | `references/worktree-review.md`                                              | Prepare, review, correction, bring-back, and removal lifecycle |
+| Project rules, specifications, OpenSpec, external context, or Skill guidance | `references/delegation-prompt.md`                                            | Compile a self-contained brief                                 |
+| User explicitly requests the old one-shot mode                               | `references/headless-protocol.md` and `references/legacy-worktree-review.md` | Legacy compatibility only                                      |
 
 Read each triggered reference completely before invoking its script. Do not
 reconstruct commands from memory.

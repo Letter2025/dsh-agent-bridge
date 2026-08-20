@@ -86,7 +86,11 @@ export class DshWebClient implements DshWebClientLike {
     }
   }
 
-  private async call<T>(method: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  private async call<T>(
+    method: string,
+    payload: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     if (!/^[a-z][A-Za-z0-9]*(?:[./][A-Za-z][A-Za-z0-9]*)+$/u.test(method)) {
       throw new DshWebError("invalid_input", "Invalid DSH Web RPC method.");
     }
@@ -135,7 +139,10 @@ export class DshWebClient implements DshWebClientLike {
     }
     const envelope = requireRecord(decoded, "DSH Web returned an invalid response envelope.");
     if (envelope.type !== "server-response" || envelope.rpcId !== rpcId) {
-      throw new DshWebError("web_protocol_error", "DSH Web response identity did not match the request.");
+      throw new DshWebError(
+        "web_protocol_error",
+        "DSH Web response identity did not match the request.",
+      );
     }
     const result = requireRecord(envelope.result, "DSH Web response omitted its result.");
     if (result.ok === true) return result.value as T;
@@ -204,7 +211,10 @@ export class DshWebClient implements DshWebClientLike {
 
   async prompt(sessionId: string, text: string, signal?: AbortSignal): Promise<DshPromptResponse> {
     if (text.trim() === "" || Buffer.byteLength(text, "utf8") > MAX_PROMPT_BYTES) {
-      throw new DshWebError("invalid_input", "DSH Web prompt must be non-empty and at most 64 KiB.");
+      throw new DshWebError(
+        "invalid_input",
+        "DSH Web prompt must be non-empty and at most 64 KiB.",
+      );
     }
     const value = requireRecord(
       await this.call<unknown>(
@@ -250,7 +260,10 @@ export class DshWebClient implements DshWebClientLike {
       );
     }
     if (result.kind !== "success") {
-      throw new DshWebError("web_protocol_error", "DSH command endpoint returned an invalid result.");
+      throw new DshWebError(
+        "web_protocol_error",
+        "DSH command endpoint returned an invalid result.",
+      );
     }
     return typeof result.text === "string"
       ? { matched: true, text: result.text }

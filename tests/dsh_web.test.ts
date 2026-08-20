@@ -1,11 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   DshWebClient,
-  DshWebError,
   loadWebWorkflowState,
   normalizeDshWebUrl,
   prepareWebWorktree,
@@ -53,7 +52,10 @@ class FakeDshWebClient implements DshWebClientLike {
     return { version: "test" };
   }
 
-  async createSession(cwd: string, sessionId = `session-${this.sessions.size}`): Promise<{ sessionId: string }> {
+  async createSession(
+    cwd: string,
+    sessionId = `session-${this.sessions.size}`,
+  ): Promise<{ sessionId: string }> {
     this.sessions.set(sessionId, cwd);
     this.events.set(sessionId, this.events.get(sessionId) ?? []);
     return { sessionId };
@@ -196,10 +198,7 @@ describe("DSH Web worktree workflow", () => {
     const root = await createRepository();
     await writeFile(join(root, "tracked.txt"), "dirty\n");
     await expect(
-      prepareWebWorktree(
-        { cwd: root, name: "codex/dirty" },
-        { client: new FakeDshWebClient() },
-      ),
+      prepareWebWorktree({ cwd: root, name: "codex/dirty" }, { client: new FakeDshWebClient() }),
     ).rejects.toMatchObject({ code: "source_dirty" });
   });
 
@@ -250,8 +249,16 @@ describe("DSH Web worktree workflow", () => {
       { client, sleep: instantSleep },
     );
 
-    expect(first).toMatchObject({ status: "succeeded", sessionId: state.workerSessionId, text: "completed-1" });
-    expect(second).toMatchObject({ status: "succeeded", sessionId: state.workerSessionId, text: "completed-2" });
+    expect(first).toMatchObject({
+      status: "succeeded",
+      sessionId: state.workerSessionId,
+      text: "completed-1",
+    });
+    expect(second).toMatchObject({
+      status: "succeeded",
+      sessionId: state.workerSessionId,
+      text: "completed-2",
+    });
     const codingPrompts = client.prompts;
     expect(codingPrompts).toHaveLength(2);
     expect(new Set(codingPrompts.map((entry) => entry.sessionId))).toEqual(
@@ -314,15 +321,10 @@ describe("DSH Web CLI arguments", () => {
       cwd: repoPath,
       name: "codex/task",
     });
-    expect(
-      parseWebArgs([
-        "run",
-        "--state",
-        statePath,
-        "--prompt-file",
-        promptPath,
-      ]),
-    ).toMatchObject({ command: "run", promptFile: promptPath });
+    expect(parseWebArgs(["run", "--state", statePath, "--prompt-file", promptPath])).toMatchObject({
+      command: "run",
+      promptFile: promptPath,
+    });
     expect(() => parseWebArgs(["bring-back", "--state", "relative.json"])).toThrow(/absolute/);
     expect(() => parseWebArgs(["status", "--state", statePath, "--force"])).toThrow(
       /only for remove/,

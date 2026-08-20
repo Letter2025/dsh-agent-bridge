@@ -34,7 +34,7 @@ After a successful turn:
 1. Run `dsh_web.mjs inspect --state ...`.
 2. Inspect `git -C <worktreePath> status --short`.
 3. Review tracked changes with `git -C <worktreePath> diff --binary
-   <baseCommit>` and inspect every untracked file separately.
+<baseCommit>` and inspect every untracked file separately.
 4. Run relevant checks independently in `workerCwd`.
 5. Treat DSH's completion report as evidence, never acceptance.
 

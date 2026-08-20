@@ -1,5 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { FIXED_SAFETY_POLICY } from "../runner/constants";
 import { redactSecrets } from "../runner/output";
@@ -112,7 +121,10 @@ export async function loadWebWorkflowState(statePath: string): Promise<DshWebWor
   }
   const promptCount = value.promptCount;
   const lastTurnSeq = value.lastTurnSeq;
-  if (!Number.isSafeInteger(promptCount) || (lastTurnSeq !== null && !Number.isSafeInteger(lastTurnSeq))) {
+  if (
+    !Number.isSafeInteger(promptCount) ||
+    (lastTurnSeq !== null && !Number.isSafeInteger(lastTurnSeq))
+  ) {
     throw new DshWebError("state_invalid", "Web workflow state has invalid counters.");
   }
   const resolvedStatePath = await realpath(statePath);
@@ -145,7 +157,9 @@ export async function loadWebWorkflowState(statePath: string): Promise<DshWebWor
   return state;
 }
 
-function parseWorktreeList(output: string): Array<{ path: string; branch?: string; head?: string }> {
+function parseWorktreeList(
+  output: string,
+): Array<{ path: string; branch?: string; head?: string }> {
   return output
     .trim()
     .split(/\r?\n\r?\n/u)
@@ -154,7 +168,8 @@ function parseWorktreeList(output: string): Array<{ path: string; branch?: strin
       const result: { path: string; branch?: string; head?: string } = { path: "" };
       for (const line of block.split(/\r?\n/u)) {
         if (line.startsWith("worktree ")) result.path = line.slice("worktree ".length);
-        if (line.startsWith("branch refs/heads/")) result.branch = line.slice("branch refs/heads/".length);
+        if (line.startsWith("branch refs/heads/"))
+          result.branch = line.slice("branch refs/heads/".length);
         if (line.startsWith("HEAD ")) result.head = line.slice("HEAD ".length);
       }
       return result;
@@ -225,7 +240,9 @@ export async function prepareWebWorktree(
       "Worktree name must be a safe Git ref path made of letters, digits, dot, underscore, dash, and slash.",
     );
   }
-  const webUrl = normalizeDshWebUrl(options.webUrl ?? process.env.DSH_WEB_URL ?? "http://127.0.0.1:3080");
+  const webUrl = normalizeDshWebUrl(
+    options.webUrl ?? process.env.DSH_WEB_URL ?? "http://127.0.0.1:3080",
+  );
   const worktreeDirName = validateDirName(options.worktreeDirName ?? DEFAULT_WORKTREE_DIR_NAME);
   const repository = await resolveRepository(options.cwd);
   const repoRoot = await realpath(repository.sourceRoot);
@@ -240,13 +257,11 @@ export async function prepareWebWorktree(
     );
   }
   const namespaceRoot = resolve(repoRoot, worktreeDirName);
-  const expectedWorktreePath = resolve(
-    namespaceRoot,
-    "worktree",
-    ...options.name.split("/"),
-  );
+  const expectedWorktreePath = resolve(namespaceRoot, "worktree", ...options.name.split("/"));
   assertInside(namespaceRoot, expectedWorktreePath);
-  const statePath = resolve(options.statePath ?? stateFileFor(repoRoot, worktreeDirName, options.name));
+  const statePath = resolve(
+    options.statePath ?? stateFileFor(repoRoot, worktreeDirName, options.name),
+  );
   assertInside(namespaceRoot, statePath);
   if (await pathExists(statePath)) {
     throw new DshWebError("state_exists", `A bridge state already exists for ${options.name}.`);
@@ -290,7 +305,11 @@ export async function prepareWebWorktree(
   }
   const branch = (await runGit(worktreePath, ["branch", "--show-current"])).trim();
   const baseCommit = (await runGit(worktreePath, ["rev-parse", "HEAD"])).trim();
-  if (branch !== options.name || registered.branch !== branch || baseCommit !== repository.baseCommit) {
+  if (
+    branch !== options.name ||
+    registered.branch !== branch ||
+    baseCommit !== repository.baseCommit
+  ) {
     throw new DshWebError(
       "worktree_invalid",
       "Created checkout branch or base commit does not match the requested DSH worktree.",
@@ -412,7 +431,10 @@ export async function runWebTurn(
   }
   const client = dependencies.client ?? new DshWebClient(state.webUrl);
   const priorHistory = await client.history(state.workerSessionId, 8, options.signal);
-  const baselineSeq = Math.max(state.lastTurnSeq ?? -1, maxHistorySeq(priorHistory.events.map((entry) => entry.event)));
+  const baselineSeq = Math.max(
+    state.lastTurnSeq ?? -1,
+    maxHistorySeq(priorHistory.events.map((entry) => entry.event)),
+  );
   const delegatedTask = composeDelegatedTask(options.prompt);
   const startedAt = dependencies.now?.() ?? Date.now();
   await client.prompt(state.workerSessionId, delegatedTask, options.signal);

@@ -48,7 +48,11 @@ export interface DshWebClientLike {
     sessionId?: string,
     signal?: AbortSignal,
   ): Promise<{ sessionId: string }>;
-  history(sessionId: string, maxMessages?: number, signal?: AbortSignal): Promise<DshSessionHistory>;
+  history(
+    sessionId: string,
+    maxMessages?: number,
+    signal?: AbortSignal,
+  ): Promise<DshSessionHistory>;
   prompt(sessionId: string, text: string, signal?: AbortSignal): Promise<DshPromptResponse>;
   command(
     sessionId: string,
