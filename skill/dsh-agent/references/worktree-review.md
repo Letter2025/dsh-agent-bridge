@@ -8,6 +8,8 @@ planning, independent review, acceptance, and the approval boundary.
 
 1. Inspect the source repository status without changing it. Stop if it is
    dirty; this mode deliberately does not carry uncommitted source changes.
+   Also require the committed `.gitignore` to contain `.dsh-worktrees/` so DSH
+   preparation does not dirty the source.
 2. Choose one disclosed task name such as `codex/fix-login-timeout`.
 3. Run `dsh_web.mjs prepare` with the Codex session's authorized host cwd.
 4. Record `statePath`, `worktreePath`, `workerCwd`, branch, base commit, and both

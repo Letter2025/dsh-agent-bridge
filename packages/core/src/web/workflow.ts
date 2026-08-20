@@ -71,6 +71,27 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+async function requireCommittedWorktreeIgnore(repoRoot: string, worktreeDirName: string) {
+  let contents: string;
+  try {
+    contents = await readFile(join(repoRoot, ".gitignore"), "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      throw new DshWebError(
+        "worktree_ignore_missing",
+        `Commit ${worktreeDirName}/ to the repository .gitignore before preparation.`,
+      );
+    }
+    throw error;
+  }
+  if (!contents.split(/\r?\n/u).some((line) => line.trim() === `${worktreeDirName}/`)) {
+    throw new DshWebError(
+      "worktree_ignore_missing",
+      `Commit ${worktreeDirName}/ to the repository .gitignore before preparation.`,
+    );
+  }
+}
+
 async function persistState(state: DshWebWorkflowState): Promise<void> {
   const target = resolve(state.statePath);
   const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
@@ -256,6 +277,7 @@ export async function prepareWebWorktree(
       "DSH Web worktree preparation requires a clean source worktree so the plugin checkout matches the reviewed HEAD.",
     );
   }
+  await requireCommittedWorktreeIgnore(repoRoot, worktreeDirName);
   const namespaceRoot = resolve(repoRoot, worktreeDirName);
   const expectedWorktreePath = resolve(namespaceRoot, "worktree", ...options.name.split("/"));
   assertInside(namespaceRoot, expectedWorktreePath);

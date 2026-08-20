@@ -64,6 +64,10 @@ The source worktree must be clean. A remote push is not required, but the full
 baseline must exist in local `HEAD`; this mode does not copy uncommitted source
 changes into the DSH worktree.
 
+The clean `HEAD` must also contain `<worktreeDirName>/` in the repository
+`.gitignore` (normally `.dsh-worktrees/`). This prevents the plugin from
+modifying `.gitignore` during preparation and keeps later bring-back eligible.
+
 Choose one safe, descriptive task name such as `codex/fix-session-timeout` and
 disclose that preparation will ask DSH to create a permanent branch and
 worktree. Then run:

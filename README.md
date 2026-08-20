@@ -36,6 +36,8 @@ operation executes inside DSH through its Web RPC and command registry.
 - Validates the worktree path, Git registration, branch, HEAD, and clean start.
 - Requires a clean source worktree. A remote push is unnecessary, but the full
   baseline must exist in local `HEAD`.
+- Requires `.dsh-worktrees/` in the committed `.gitignore` so plugin
+  preparation cannot dirty the source checkout.
 - Keeps Codex responsible for independent diff review and verification.
 - Requires separate approval before DSH bring-back or removal.
 - Retains the original headless Runner as an explicit legacy mode.

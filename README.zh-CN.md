@@ -44,6 +44,8 @@ RPC 和 command registry 执行。
 - 仅连接 `127.0.0.1`、`localhost` 或 `::1` 上的 DSH Web。
 - 校验 worktree 路径、Git 注册、分支、HEAD 和初始 clean 状态。
 - 源工作区必须 clean；不要求 push，但完整基线必须存在于本地 `HEAD`。
+- clean `HEAD` 的 `.gitignore` 必须包含 `.dsh-worktrees/`，避免插件准备阶段
+  修改源工作区。
 - Codex 独立检查 diff、未跟踪文件和测试结果。
 - 最多两轮同范围 DSH 修复。
 - bring-back 和 remove 始终需要单独用户批准。

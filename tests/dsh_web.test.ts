@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,9 +36,9 @@ async function createRepository(): Promise<string> {
   git(root, ["config", "user.name", "DSH Web Test"]);
   git(root, ["config", "user.email", "dsh-web-test@example.invalid"]);
   await writeFile(join(root, "tracked.txt"), "base\n");
-  git(root, ["add", "tracked.txt"]);
+  await writeFile(join(root, ".gitignore"), ".dsh-worktrees/\n");
+  git(root, ["add", "tracked.txt", ".gitignore"]);
   git(root, ["commit", "-m", "baseline"]);
-  await appendFile(join(root, ".git", "info", "exclude"), "\n.dsh-worktrees/\n");
   return root;
 }
 
@@ -194,6 +194,19 @@ describe("DSH Web API client", () => {
 });
 
 describe("DSH Web worktree workflow", () => {
+  it("requires the plugin directory to be committed in .gitignore", async () => {
+    const root = await createRepository();
+    await writeFile(join(root, ".gitignore"), "");
+    git(root, ["add", ".gitignore"]);
+    git(root, ["commit", "-m", "remove ignore rule"]);
+    await expect(
+      prepareWebWorktree(
+        { cwd: root, name: "codex/missing-ignore" },
+        { client: new FakeDshWebClient() },
+      ),
+    ).rejects.toMatchObject({ code: "worktree_ignore_missing" });
+  });
+
   it("refuses a dirty source because plugin worktrees start from committed HEAD", async () => {
     const root = await createRepository();
     await writeFile(join(root, "tracked.txt"), "dirty\n");

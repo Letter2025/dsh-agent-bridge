@@ -95,6 +95,7 @@ Before accepting `prepare`, the bridge verifies:
 
 - the requested name is a safe Git ref path;
 - the source worktree is clean, so its committed HEAD is the complete baseline;
+- the committed `.gitignore` already contains the plugin directory rule;
 - DSH confirmed `/worktree create`;
 - the expected default plugin checkout exists under
   `.dsh-worktrees/worktree/<name>`;
