@@ -1,6 +1,6 @@
 export const WORKTREE_SESSION_VERSION = 2;
-export const SESSION_PREFIX = "qoder-agent-worktree-";
-export const PATCH_FILE_NAME = "qoder-only.patch";
+export const SESSION_PREFIX = "dsh-agent-worktree-";
+export const PATCH_FILE_NAME = "dsh-only.patch";
 export const STATE_FILE_NAME = "session.json";
 export const INCLUDED_ARTIFACT_MANIFEST_FILE_NAME = "included-ignored-artifacts.json";
 export const MAX_GIT_OUTPUT_BYTES = 64 * 1024 * 1024;

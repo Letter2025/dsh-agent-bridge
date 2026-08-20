@@ -56,20 +56,18 @@ export interface ParsedRunnerArgs {
   cwd: string;
   prompt: string | undefined;
   promptFile: string | undefined;
-  qodercliPath: string | undefined;
-  model: string | undefined;
+  dshPath: string | undefined;
   timeoutMs: string | undefined;
-  maxModelRequestRetries: string | undefined;
 }
 
 export interface RunnerConfig {
   cwd: string;
   prompt: string;
+  dshPath: string;
   executable: string;
+  executableArgs: string[];
   env: NodeJS.ProcessEnv;
-  model: string | undefined;
   timeoutMs: number;
-  maxModelRequestRetries: number;
   signal: AbortSignal | undefined;
 }
 
@@ -83,9 +81,11 @@ export interface RunnerEnvelope {
   runnerVersion: string;
   status: "succeeded" | "failed" | "timed_out" | "spawn_error";
   cwd: string | null;
+  dshPath: string | null;
   executable: string | null;
-  permissionMode: "auto";
-  outputFormat: "json";
+  profile: "headless";
+  sessionMode: "fresh_persisted";
+  outputFormat: "text";
   exitCode: number | null;
   signal: string | null;
   durationMs: number;
@@ -94,7 +94,7 @@ export interface RunnerEnvelope {
   stderr: string;
   stdoutTruncated: boolean;
   stderrTruncated: boolean;
-  qoderOutput: { format: "json"; raw: string };
+  dshOutput: { format: "text"; raw: string };
   retryable: boolean;
   recovery: { strategy: "continue_in_existing_worktree" } | null;
   error: RunnerErrorShape | undefined;

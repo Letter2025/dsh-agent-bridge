@@ -5,17 +5,22 @@ import { build } from "tsdown";
 
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
-const temporaryRoot = await mkdtemp(join(tmpdir(), "qoder-agent-skill-build-"));
+const temporaryRoot = await mkdtemp(join(tmpdir(), "dsh-agent-skill-build-"));
 const artifacts = [
   {
-    name: "run_qoder",
-    entry: "packages/cli/src/run-qoder.ts",
-    committed: "skill/qoder-agent/scripts/run_qoder.mjs",
+    name: "dsh_web",
+    entry: "packages/cli/src/dsh-web.ts",
+    committed: "skill/dsh-agent/scripts/dsh_web.mjs",
   },
   {
-    name: "qoder_worktree",
-    entry: "packages/cli/src/qoder-worktree.ts",
-    committed: "skill/qoder-agent/scripts/qoder_worktree.mjs",
+    name: "run_dsh",
+    entry: "packages/cli/src/run-dsh.ts",
+    committed: "skill/dsh-agent/scripts/run_dsh.mjs",
+  },
+  {
+    name: "dsh_worktree",
+    entry: "packages/cli/src/dsh-worktree.ts",
+    committed: "skill/dsh-agent/scripts/dsh_worktree.mjs",
   },
 ];
 
@@ -35,7 +40,7 @@ try {
       report: false,
       logLevel: "silent",
       deps: {
-        alwaysBundle: ["@qoder-agent-bridge/core"],
+        alwaysBundle: ["@dsh-agent-bridge/core"],
       },
     });
 

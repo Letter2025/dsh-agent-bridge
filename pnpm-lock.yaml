@@ -29,7 +29,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@qoder-agent-bridge/core':
+      '@dsh-agent-bridge/core':
         specifier: workspace:*
         version: link:../core
 

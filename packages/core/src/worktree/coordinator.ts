@@ -93,7 +93,7 @@ async function disposeRetryChain(retryOf: string | null, sourceRoot: string): Pr
 
 /**
  * Create an isolated worktree that starts with a staged copy of the source
- * worktree state. Its index is the pre-Qoder baseline.
+ * worktree state. Its index is the pre-DSH baseline.
  *
  * @param {string} cwd
  * @param {string | undefined} retryOf
@@ -223,7 +223,7 @@ export async function inspectWorktree(statePath: string): Promise<WorktreeInspec
 }
 
 /**
- * Stage the post-Qoder state only in the temporary worktree, then emit the
+ * Stage the post-DSH state only in the temporary worktree, then emit the
  * binary patch from the preserved baseline to that state.
  *
  * @param {string} statePath
@@ -246,7 +246,7 @@ export async function createReviewPatch(statePath: string): Promise<ReviewPatch>
   if (currentIndexTree !== session.baselineTree) {
     throw new WorktreeError(
       "git_index_modified",
-      "Qoder changed the temporary Git index; stop rather than generating a review patch.",
+      "DSH changed the temporary Git index; stop rather than generating a review patch.",
     );
   }
   const includedArtifactPaths = new Set(await readIncludedArtifactManifestPaths(session));
@@ -288,7 +288,7 @@ export async function createReviewPatch(statePath: string): Promise<ReviewPatch>
 /**
  * Reopen a reviewed candidate for an in-place correction. The reviewed patch
  * is archived, the index returns to the original source baseline, and the
- * working tree keeps the complete rejected candidate for the next Qoder run.
+ * working tree keeps the complete rejected candidate for the next DSH run.
  *
  * @param {string} statePath
  * @returns {Promise<ReopenedReview>}
@@ -332,7 +332,7 @@ export async function reopenReviewWorktree(statePath: string): Promise<ReopenedR
 
   const archivedPatchPath = join(
     session.sessionRoot,
-    `qoder-only.attempt-${session.reviewAttempt}.patch`,
+    `dsh-only.attempt-${session.reviewAttempt}.patch`,
   );
   try {
     await copyFile(session.reviewPatchPath, archivedPatchPath, fsConstants.COPYFILE_EXCL);
@@ -369,7 +369,7 @@ export async function reopenReviewWorktree(statePath: string): Promise<ReopenedR
 }
 
 /**
- * Apply the reviewed Qoder-only patch to the original source worktree without
+ * Apply the reviewed DSH-only patch to the original source worktree without
  * staging it, then dispose the temporary worktree. A failed preflight leaves
  * both the source and the review session untouched.
  *
@@ -422,7 +422,7 @@ export async function applyReviewPatch(statePath: string): Promise<WorktreeSessi
   } catch {
     throw new WorktreeError(
       "apply_conflict",
-      "The reviewed Qoder patch no longer applies cleanly; the source worktree was not modified.",
+      "The reviewed DSH patch no longer applies cleanly; the source worktree was not modified.",
     );
   }
   await runGit(session.sourceRoot, ["apply", "--binary", session.reviewPatchPath]);
@@ -435,7 +435,7 @@ export async function applyReviewPatch(statePath: string): Promise<WorktreeSessi
     const detail = error instanceof Error ? error.message : "Unknown cleanup failure.";
     throw new WorktreeError(
       "cleanup_failed",
-      `The reviewed Qoder patch was applied, but the temporary worktree could not be removed: ${detail}`,
+      `The reviewed DSH patch was applied, but the temporary worktree could not be removed: ${detail}`,
     );
   }
   return session;

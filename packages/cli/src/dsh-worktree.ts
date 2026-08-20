@@ -11,7 +11,7 @@ import {
   inspectWorktree,
   prepareWorktree,
   reopenReviewWorktree,
-} from "@qoder-agent-bridge/core";
+} from "@dsh-agent-bridge/core";
 
 export type WorktreeCommand = "prepare" | "inspect" | "diff" | "reopen" | "apply" | "dispose";
 
@@ -126,7 +126,7 @@ export async function executeWorktreeCommand(argv: string[]): Promise<Record<str
       operation: "prepare",
       statePath: session.statePath,
       worktreeRoot: session.worktreeRoot,
-      qoderCwd: session.worktreeCwd,
+      dshCwd: session.worktreeCwd,
       retryOf: session.retryOf,
       includedIgnoredArtifacts: session.includedIgnoredArtifacts,
     };
@@ -138,7 +138,7 @@ export async function executeWorktreeCommand(argv: string[]): Promise<Record<str
       operation: "inspect",
       phase: result.session.phase,
       statePath: result.session.statePath,
-      qoderCwd: result.session.worktreeCwd,
+      dshCwd: result.session.worktreeCwd,
       hasChanges: result.hasChanges,
       changedFiles: result.changedFiles,
       indexModified: result.indexModified,
@@ -165,7 +165,7 @@ export async function executeWorktreeCommand(argv: string[]): Promise<Record<str
       operation: "reopen",
       phase: result.session.phase,
       statePath: result.session.statePath,
-      qoderCwd: result.session.worktreeCwd,
+      dshCwd: result.session.worktreeCwd,
       archivedPatchPath: result.archivedPatchPath,
       changedFiles: result.changedFiles,
       indexModified: false,

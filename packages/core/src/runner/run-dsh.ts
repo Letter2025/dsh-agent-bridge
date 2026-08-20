@@ -1,4 +1,4 @@
-// Qoder one-shot execution service. CLI concerns live in packages/cli.
+// DSH one-shot execution service. CLI concerns live in packages/cli.
 
 import { spawn } from "node:child_process";
 import {
@@ -6,8 +6,8 @@ import {
   HARD_OUTPUT_LIMIT_BYTES,
   TERMINATION_GRACE_MS,
 } from "./constants";
-import { buildQoderArgs, resolveConfig, validateWindowsCommandLine } from "./config";
-import { OutputCollector, isModelQueueExhausted, redactSecrets } from "./output";
+import { buildDshArgs, resolveConfig, validateWindowsCommandLine } from "./config";
+import { OutputCollector, redactSecrets } from "./output";
 import { createEnvelope, createPreflightFailure } from "./protocol";
 import {
   type ChildProcessLike,
@@ -24,7 +24,7 @@ import {
  * @param {RunnerDependencies} dependencies
  * @returns {Promise<RunnerExecution>}
  */
-export async function runQoder(
+export async function runDsh(
   config: RunnerConfig,
   dependencies: RunnerDependencies = {},
 ): Promise<RunnerExecution> {
@@ -43,7 +43,7 @@ export async function runQoder(
   const startedAt = now();
   const stdout = new OutputCollector(captureLimitBytes, hardOutputLimitBytes);
   const stderr = new OutputCollector(captureLimitBytes, hardOutputLimitBytes);
-  const args = buildQoderArgs(config);
+  const args = buildDshArgs(config);
   if (platform === "win32") {
     validateWindowsCommandLine(config.executable, args);
   }
@@ -123,43 +123,35 @@ export async function runQoder(
       const stderrText = redactSecrets(stderr.toString(), config.prompt);
       let status: RunnerEnvelope["status"] = "failed";
       let error: RunnerErrorShape | undefined;
-      let retryable = false;
-      let recovery: RunnerEnvelope["recovery"] = null;
       if (terminationReason === "timed_out") {
         status = "timed_out";
-        error = { code: "timed_out", message: "Qoder execution exceeded the configured timeout." };
+        error = { code: "timed_out", message: "DSH execution exceeded the configured timeout." };
       } else if (terminationReason === "output_limit") {
         error = {
           code: "output_limit",
-          message: "Qoder output exceeded the hard per-stream limit.",
+          message: "DSH output exceeded the hard per-stream limit.",
         };
       } else if (terminationReason === "interrupted") {
         error = {
           code: "interrupted",
-          message: "Qoder execution was interrupted by the parent process.",
+          message: "DSH execution was interrupted by the parent process.",
         };
       } else if (spawnError !== undefined) {
         status = "spawn_error";
         error = spawnError;
       } else if (exitCode === 0 && signal === null) {
         status = "succeeded";
-      } else if (isModelQueueExhausted(stdoutText, stderrText)) {
-        retryable = true;
-        recovery = { strategy: "continue_in_existing_worktree" };
-        error = {
-          code: "model_queue_exhausted",
-          message: "Qoder exhausted its model queue recovery attempts.",
-        };
       } else {
         error = {
-          code: "qoder_exit_nonzero",
-          message: "Qoder exited without a successful status.",
+          code: "dsh_exit_nonzero",
+          message: "DSH exited without a successful status.",
         };
       }
 
       const envelope = createEnvelope({
         status,
         cwd: config.cwd,
+        dshPath: config.dshPath,
         executable: config.executable,
         exitCode,
         signal,
@@ -169,9 +161,7 @@ export async function runQoder(
         stderr: stderrText,
         stdoutTruncated: stdout.truncated,
         stderrTruncated: stderr.truncated,
-        qoderOutput: { format: "json", raw: stdoutText },
-        retryable,
-        recovery,
+        dshOutput: { format: "text", raw: stdoutText },
         error,
       });
       resolvePromise({ envelope, exitCode: status === "succeeded" ? 0 : 1 });
@@ -198,14 +188,14 @@ export async function runQoder(
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch {
-      finish(null, null, { code: "spawn_error", message: "Qoder could not be started." });
+      finish(null, null, { code: "spawn_error", message: "DSH could not be started." });
       return;
     }
 
     if (child?.stdout == null || child.stderr == null) {
       finish(null, null, {
         code: "spawn_error",
-        message: "Qoder did not provide standard output streams.",
+        message: "DSH did not provide standard output streams.",
       });
       return;
     }
@@ -228,8 +218,8 @@ export async function runQoder(
         code: code === "ENOENT" ? "executable_not_found" : "spawn_error",
         message:
           code === "ENOENT"
-            ? "The Qoder executable could not be started."
-            : "Qoder could not be started.",
+            ? "The DSH executable could not be started."
+            : "DSH could not be started.",
       });
     });
     child.once("close", (code: number | null, signal: NodeJS.Signals | null) => {
@@ -254,7 +244,7 @@ export async function executeRunner(
     failureCwd = config.cwd;
     failureExecutable = config.executable;
     config.signal = signal;
-    return await runQoder(config);
+    return await runDsh(config);
   } catch (error) {
     return createPreflightFailure(startedAt, failureCwd, failureExecutable, error);
   }

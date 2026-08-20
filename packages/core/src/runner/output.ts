@@ -1,6 +1,5 @@
 const SECRET_REPLACEMENT = "[REDACTED]";
 const PROMPT_REPLACEMENT = "[PROMPT OMITTED]";
-const MODEL_QUEUE_EXHAUSTED_MESSAGE = "model queue recovery attempts exceeded";
 
 function takeLast(value: Buffer, limit: number): Buffer {
   return value.length <= limit ? value : value.subarray(value.length - limit);
@@ -73,8 +72,4 @@ export function redactSecrets(text: string, prompt = ""): string {
       `$1$2${SECRET_REPLACEMENT}$2`,
     );
   return redacted;
-}
-
-export function isModelQueueExhausted(stdout: string, stderr: string): boolean {
-  return `${stdout}\n${stderr}`.toLowerCase().includes(MODEL_QUEUE_EXHAUSTED_MESSAGE);
 }

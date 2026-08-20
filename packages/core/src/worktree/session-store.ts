@@ -24,10 +24,10 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
   try {
     parsed = JSON.parse(await readFile(resolvedState, "utf8"));
   } catch {
-    throw new WorktreeError("invalid_input", "--state is not a readable Qoder worktree session.");
+    throw new WorktreeError("invalid_input", "--state is not a readable DSH worktree session.");
   }
   if (typeof parsed !== "object" || parsed === null) {
-    throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+    throw new WorktreeError("invalid_input", "--state is not a valid DSH worktree session.");
   }
   const session = parsed as Partial<WorktreeSession>;
   const hasIncludedArtifactState = Object.prototype.hasOwnProperty.call(
@@ -56,7 +56,7 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
       session.retryOf !== null &&
       typeof session.retryOf !== "string")
   ) {
-    throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+    throw new WorktreeError("invalid_input", "--state is not a valid DSH worktree session.");
   }
   if (typeof session.retryOf === "string") requireAbsolute(session.retryOf, "retryOf");
 
@@ -68,7 +68,7 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
   } catch {
     throw new WorktreeError(
       "invalid_input",
-      "--state is outside an existing Qoder worktree session.",
+      "--state is outside an existing DSH worktree session.",
     );
   }
   const normalizeSessionPath = (path: string): string => {
@@ -99,21 +99,21 @@ export async function readSession(statePath: string): Promise<WorktreeSession> {
       !Number.isInteger(includedIgnoredArtifacts.totalBytes) ||
       includedIgnoredArtifacts.totalBytes < 0
     ) {
-      throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+      throw new WorktreeError("invalid_input", "--state is not a valid DSH worktree session.");
     }
     if (
       resolve(includedIgnoredArtifacts.configPath) !==
-      resolve(validSession.sourceRoot, ".qoderinclude")
+      resolve(validSession.sourceRoot, ".dshinclude")
     ) {
-      throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+      throw new WorktreeError("invalid_input", "--state is not a valid DSH worktree session.");
     }
     const normalizedManifestPath = normalizeSessionPath(includedIgnoredArtifacts.manifestPath);
     if (normalizedManifestPath !== join(sessionRoot, "included-ignored-artifacts.json")) {
-      throw new WorktreeError("invalid_input", "--state is not a valid Qoder worktree session.");
+      throw new WorktreeError("invalid_input", "--state is not a valid DSH worktree session.");
     }
   }
   if (!basename(sessionRoot).startsWith(SESSION_PREFIX)) {
-    throw new WorktreeError("invalid_input", "--state is outside a Qoder worktree session.");
+    throw new WorktreeError("invalid_input", "--state is outside a DSH worktree session.");
   }
   assertInside(sessionRoot, resolvedState);
   assertInside(sessionRoot, worktreeRoot);

@@ -1,11 +1,9 @@
 import { constants as fsConstants } from "node:fs";
 import { access, lstat, open, realpath, stat } from "node:fs/promises";
-import { delimiter, extname, isAbsolute, join } from "node:path";
+import { isAbsolute, posix as posixPath, win32 as win32Path } from "node:path";
 import {
-  DEFAULT_MAX_MODEL_REQUEST_RETRIES,
   DEFAULT_TIMEOUT_MS,
   FIXED_SAFETY_POLICY,
-  MAX_MODEL_REQUEST_RETRIES,
   MAX_TIMEOUT_MS,
   PROMPT_LIMIT_BYTES,
   WINDOWS_COMMAND_LINE_LIMIT_UTF16,
@@ -170,7 +168,7 @@ export function validateWindowsCommandLine(executable: string, args: string[]): 
   if (windowsCommandLineLength(executable, args) > WINDOWS_COMMAND_LINE_LIMIT_UTF16) {
     throw new RunnerError(
       "invalid_input",
-      "The Qoder command line exceeds the Windows CreateProcessW limit; shorten the brief, path, or model.",
+      "The DSH command line exceeds the Windows CreateProcessW limit; shorten the brief or path.",
     );
   }
 }
@@ -184,23 +182,6 @@ export function parseTimeout(rawValue: string | undefined, source = "timeout"): 
     throw new RunnerError(
       "invalid_input",
       `${source} must be between 1 and ${MAX_TIMEOUT_MS} milliseconds.`,
-    );
-  }
-  return value;
-}
-
-export function parseModelRequestRetries(
-  rawValue: string | undefined,
-  source = "model request retries",
-): number {
-  if (rawValue === undefined || rawValue.trim() === "" || !/^\d+$/.test(rawValue)) {
-    throw new RunnerError("invalid_input", `${source} must be an integer.`);
-  }
-  const value = Number(rawValue);
-  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_MODEL_REQUEST_RETRIES) {
-    throw new RunnerError(
-      "invalid_input",
-      `${source} must be between 0 and ${MAX_MODEL_REQUEST_RETRIES}.`,
     );
   }
   return value;
@@ -226,8 +207,16 @@ export async function normalizeCwd(cwd: string, fsApi: RunnerFs = DEFAULT_FS): P
   }
 }
 
-async function resolveExecutableFile(candidate: string, fsApi: RunnerFs): Promise<string | null> {
-  if (!isAbsolute(candidate)) return null;
+function pathForPlatform(platform: NodeJS.Platform) {
+  return platform === "win32" ? win32Path : posixPath;
+}
+
+async function resolveExecutableFile(
+  candidate: string,
+  fsApi: RunnerFs,
+  platform: NodeJS.Platform,
+): Promise<string | null> {
+  if (!pathForPlatform(platform).isAbsolute(candidate)) return null;
   try {
     const information = await fsApi.stat(candidate);
     if (!information.isFile()) return null;
@@ -243,46 +232,116 @@ function executableCandidates(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
 ): string[] {
-  if (platform !== "win32" || extname(candidate) !== "") return [candidate];
+  if (platform !== "win32" || win32Path.extname(candidate) !== "") return [candidate];
   const extensions = (env.PATHEXT ?? ".COM;.EXE;.CMD;.BAT")
     .split(";")
     .map((extension) => extension.trim().toLowerCase())
     .filter((extension) => extension !== "");
-  return [candidate, ...extensions.map((extension) => `${candidate}${extension}`)];
+  const candidates = extensions.map((extension) => `${candidate}${extension}`);
+  for (const extension of [".exe", ".com", ".ps1", ".cmd", ".bat"]) {
+    const value = `${candidate}${extension}`;
+    if (!candidates.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      candidates.push(value);
+    }
+  }
+  candidates.push(candidate);
+  return candidates;
 }
 
-function isWindowsCommandShim(candidate: string, platform: NodeJS.Platform): boolean {
-  return platform === "win32" && [".cmd", ".bat"].includes(extname(candidate).toLowerCase());
+export interface ResolvedDshLaunch {
+  dshPath: string;
+  executable: string;
+  executableArgs: string[];
 }
 
-export async function resolveExecutable(
+async function resolveNodeExecutable(
+  env: NodeJS.ProcessEnv,
+  fsApi: RunnerFs,
+  platform: NodeJS.Platform,
+): Promise<string | null> {
+  const pathApi = pathForPlatform(platform);
+  for (const directory of (env.PATH ?? "").split(pathApi.delimiter)) {
+    if (directory.trim() === "") continue;
+    for (const candidate of executableCandidates(pathApi.join(directory, "node"), platform, env)) {
+      const resolved = await resolveExecutableFile(candidate, fsApi, platform);
+      if (resolved !== null) return resolved;
+    }
+  }
+  return null;
+}
+
+async function resolveDshCandidate(
+  candidate: string,
+  env: NodeJS.ProcessEnv,
+  fsApi: RunnerFs,
+  platform: NodeJS.Platform,
+): Promise<ResolvedDshLaunch | null> {
+  const pathApi = pathForPlatform(platform);
+  const dshPath = await resolveExecutableFile(candidate, fsApi, platform);
+  if (dshPath === null) return null;
+  if (platform !== "win32") {
+    return { dshPath, executable: dshPath, executableArgs: [] };
+  }
+
+  const extension = pathApi.extname(dshPath).toLowerCase();
+  if (["", ".cmd", ".bat", ".ps1"].includes(extension)) {
+    const shimRoot = pathApi.dirname(dshPath);
+    const nodePath = await resolveExecutableFile(
+      pathApi.join(shimRoot, "node.exe"),
+      fsApi,
+      platform,
+    );
+    const binPath = await resolveExecutableFile(
+      pathApi.join(shimRoot, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
+      fsApi,
+      platform,
+    );
+    if (nodePath !== null && binPath !== null) {
+      return { dshPath, executable: nodePath, executableArgs: [binPath] };
+    }
+    if (extension !== "") return null;
+  }
+
+  if ([".js", ".mjs", ".cjs"].includes(extension)) {
+    const nodePath = await resolveNodeExecutable(env, fsApi, platform);
+    if (nodePath === null) return null;
+    return { dshPath, executable: nodePath, executableArgs: [dshPath] };
+  }
+  return { dshPath, executable: dshPath, executableArgs: [] };
+}
+
+export async function resolveDshLaunch(
   explicitPath: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
   fsApi: RunnerFs = DEFAULT_FS,
   platform: NodeJS.Platform = process.platform,
-): Promise<string> {
-  const configuredPath = explicitPath ?? env.QODERCLI_PATH;
+): Promise<ResolvedDshLaunch> {
+  const pathApi = pathForPlatform(platform);
+  const configuredPath = explicitPath ?? env.DSH_PATH;
   if (configuredPath !== undefined && configuredPath.trim() !== "") {
+    if (!pathApi.isAbsolute(configuredPath)) {
+      throw new RunnerError("invalid_input", "--dsh-path and DSH_PATH must be absolute paths.");
+    }
     for (const candidate of executableCandidates(configuredPath, platform, env)) {
-      const resolved = await resolveExecutableFile(candidate, fsApi);
-      if (resolved !== null && !isWindowsCommandShim(resolved, platform)) return resolved;
+      const resolved = await resolveDshCandidate(candidate, env, fsApi, platform);
+      if (resolved !== null) return resolved;
     }
     throw new RunnerError(
       "executable_not_found",
-      "The configured Qoder executable is unavailable or is a Windows command shim; configure the native qodercli executable.",
+      "The configured DSH launcher is unavailable. Windows npm shims require the adjacent node.exe and @deepseek-ai/dsh package.",
     );
   }
 
-  for (const directory of (env.PATH ?? "").split(delimiter)) {
+  for (const directory of (env.PATH ?? "").split(pathApi.delimiter)) {
     if (directory.trim() === "") continue;
-    for (const candidate of executableCandidates(join(directory, "qodercli"), platform, env)) {
-      const resolved = await resolveExecutableFile(candidate, fsApi);
-      if (resolved !== null && !isWindowsCommandShim(resolved, platform)) return resolved;
+    for (const candidate of executableCandidates(pathApi.join(directory, "dsh"), platform, env)) {
+      const resolved = await resolveDshCandidate(candidate, env, fsApi, platform);
+      if (resolved !== null) return resolved;
     }
   }
   throw new RunnerError(
     "executable_not_found",
-    "Qoder CLI was not found in PATH. Add qodercli to PATH or configure QODERCLI_PATH or --qodercli-path.",
+    "DSH was not found in PATH. Add dsh to PATH or configure DSH_PATH or --dsh-path.",
   );
 }
 
@@ -293,51 +352,37 @@ export async function resolveConfig(
 ): Promise<RunnerConfig> {
   const cwd = await normalizeCwd(parsed.cwd, fsApi);
   const prompt = await resolvePrompt(parsed, fsApi);
-  const executable = await resolveExecutable(parsed.qodercliPath, env, fsApi);
-  const configuredTimeout = parsed.timeoutMs ?? env.QODER_TIMEOUT_MS;
-  const configuredRetries = parsed.maxModelRequestRetries ?? env.QODER_MAX_MODEL_REQUEST_RETRIES;
+  const launch = await resolveDshLaunch(parsed.dshPath, env, fsApi);
+  const configuredTimeout = parsed.timeoutMs ?? env.DSH_TIMEOUT_MS;
   return {
     cwd,
     prompt,
-    executable,
+    dshPath: launch.dshPath,
+    executable: launch.executable,
+    executableArgs: launch.executableArgs,
     env,
-    model: (parsed.model ?? env.QODER_MODEL)?.trim() || undefined,
     timeoutMs:
       configuredTimeout === undefined
         ? DEFAULT_TIMEOUT_MS
         : parseTimeout(
             configuredTimeout,
-            parsed.timeoutMs === undefined ? "QODER_TIMEOUT_MS" : "--timeout-ms",
-          ),
-    maxModelRequestRetries:
-      configuredRetries === undefined
-        ? DEFAULT_MAX_MODEL_REQUEST_RETRIES
-        : parseModelRequestRetries(
-            configuredRetries,
-            parsed.maxModelRequestRetries === undefined
-              ? "QODER_MAX_MODEL_REQUEST_RETRIES"
-              : "--max-model-request-retries",
+            parsed.timeoutMs === undefined ? "DSH_TIMEOUT_MS" : "--timeout-ms",
           ),
     signal: undefined,
   };
 }
 
-export function buildQoderArgs(
-  config: Pick<RunnerConfig, "cwd" | "prompt" | "model" | "maxModelRequestRetries">,
-): string[] {
-  const args = [
-    "--print",
-    "--cwd",
-    config.cwd,
-    "--permission-mode",
-    "auto",
-    "--output-format",
-    "json",
-    "--no-session-persistence",
-    "--max-model-request-retries",
-    String(config.maxModelRequestRetries),
-  ];
-  if (config.model !== undefined) args.push("--model", config.model);
-  args.push("--append-system-prompt", FIXED_SAFETY_POLICY, "--", config.prompt);
-  return args;
+export function buildDshArgs(config: Pick<RunnerConfig, "prompt" | "executableArgs">): string[] {
+  const delegatedTask = [
+    "# DSH Delegated Coding Task",
+    "",
+    "## Fixed Safety Policy",
+    "",
+    FIXED_SAFETY_POLICY,
+    "",
+    "## Delegation Brief",
+    "",
+    config.prompt,
+  ].join("\n");
+  return [...config.executableArgs, "--profile", "headless", delegatedTask];
 }

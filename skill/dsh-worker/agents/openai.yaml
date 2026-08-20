@@ -1,0 +1,4 @@
+interface:
+  display_name: "DSH Worker"
+  short_description: "Run persistent DSH worktree coding sessions"
+  default_prompt: "Use $dsh-worker to direct DSH Web to create a task worktree, continue coding in its persistent session, and wait for approval before bring-back."

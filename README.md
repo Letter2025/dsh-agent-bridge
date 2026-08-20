@@ -1,205 +1,98 @@
-# Qoder Agent Bridge
+# DSH Agent Bridge
 
 [简体中文](README.zh-CN.md)
 
-Qoder Agent Bridge is a Skill-and-CLI coding harness that brings Qoder into an
-agent workflow through bounded, one-shot executions. The core workflow is a
-structured loop: the main agent plans the task, Qoder executes it, the main
-agent reviews the result, and Qoder repairs the issues found in review. The
-loop continues until the result is accepted or the bounded workflow stops. By
-separating planning and review and adding a cross-check, it improves coding
-quality while keeping each coding execution bounded and auditable.
+DSH Agent Bridge combines Codex and DeepSeek Harness in a bounded coding
+workflow. Codex plans, compiles context, reviews, and accepts. DSH codes inside
+its own permanent task worktree and receives implementation and correction
+turns through one persistent Web Session.
 
-The reusable `qoder-agent` Skill and local Qoder CLI Runner are the primary
-implementation. The design also leaves room for other agents that satisfy the
-OpenAI Skill conventions to be plugged into the same harness.
+This project is derived from the MIT-licensed
+[`lei233/qoder-agent-bridge`](https://github.com/lei233/qoder-agent-bridge).
+Its workspace layer is redesigned for DSH Web RPC and
+[`dsh-task-worktree`](https://github.com/Letter2025/dsh-task-worktree).
 
-## Feature status
+## Workflow
 
-| Feature                                     | Status                                                        |
-| ------------------------------------------- | ------------------------------------------------------------- |
-| Skill + CLI coding harness                  | Current focus; implemented and actively being refined         |
-| Main-agent planning and review              | Core workflow; drives execution, acceptance, and repair       |
-| Planning → execution → review → repair loop | Core direction; improves results through structured review    |
-| Additional Skill-compatible agents          | Extensible direction; can be integrated into the same harness |
+```text
+Codex plans
+  → DSH controller session executes /worktree create
+  → dsh-task-worktree creates a permanent checkout
+  → the bridge validates path, branch, and base commit
+  → DSH worker session opens with cwd inside that checkout
+  → DSH implements ↔ Codex reviews and requests corrections
+  → user approves
+  → DSH executes /worktree bring-back
+```
 
-## Current Skill features
+Codex never imports or directly invokes `dsh-task-worktree`. Every plugin
+operation executes inside DSH through its Web RPC and command registry.
 
-- One-shot, non-interactive delegation through the local Qoder CLI, with
-  `qoder-worker` available as a compatibility alias.
-- A structured execution loop in which the main agent plans, Qoder implements,
-  the main agent reviews, and Qoder repairs until the result is accepted or the
-  bounded workflow stops.
-- Context-aware delegation briefs compiled by Codex from applicable project
-  instructions, OpenSpec artifacts, specifications, and portable guidance from
-  installed Codex Skills. Qoder does not need those Skills installed.
-- Progressive brief construction: simple tasks use a short base contract;
-  project context and specialized rules are added only when relevant.
-- Three-state Brief Review (Spec) policy: explicit `required` and `off` modes,
-  plus risk-based `auto` mode by default. Spec mode previews the delegation
-  brief; it is not OpenSpec generation.
-- Card-first, text-fallback confirmation for initial external Qoder data
-  authorization and Brief Review when the host exposes structured user input;
-  no fixed authorization phrase is required in the text fallback.
-- Codex-session-inherited working-directory and fixed safety boundaries that
-  prohibit writes outside `cwd`, credential handling, publication, and
-  Git-history operations.
-- Temporary detached worktrees for code-changing tasks, exact Qoder-only patch
-  generation, independent review, conflict preflight, and explicit approval
-  before applying changes to the source worktree.
-- Safe prompt-file transport with bounded, identity-checked reads and no shell
-  interpolation of generated or multiline briefs.
-- Structured result envelopes, bounded retries and output capture, redaction,
-  timeouts, signal handling, and platform-specific process-tree termination.
-- In-place review correction, trustworthy failed-Runner recovery, and linked
-  clean-restart cleanup without relying on persistent Qoder sessions.
+## Highlights
 
-## Important notes
-
-- Codex remains the planner, context compiler, reviewer, and acceptance owner;
-  Qoder is a bounded coding executor, not an autonomous peer session.
-- Code-changing worktree isolation requires a Git repository with a `HEAD`
-  commit and no unmerged paths. Ignored files are unavailable by default; a
-  root `.qoderinclude` can optionally snapshot ignored build inputs when they
-  exist locally.
-- Inherit `cwd` from Codex's authorized session directory, normally the
-  repository root. Keep the expected task changes narrower in the brief; never
-  widen Qoder beyond the host session boundary merely to expose context.
-- Brief approval authorizes one Qoder execution only. Applying the reviewed
-  patch to the source worktree always requires separate explicit approval.
-- Qoder authentication and any required host/network access must already be
-  available locally. Stop on execution failure and never retry automatically or
-  with broader permissions. After approval, continue trustworthy partial work
-  in the same prepared worktree once external prerequisites are resolved.
-- Never place credentials or secrets in a delegation brief. Write generated
-  briefs with a non-shell file-writing tool and pass them with `--prompt-file`.
-- The prompt content limit is 64 KiB, but Windows can have a lower effective
-  capacity because the complete `CreateProcessW` command line is limited. The
-  Runner preflights this and returns `invalid_input` before spawning Qoder.
-- `qoder-worker` requires the co-installed `qoder-agent`; both entry points use
-  the same Runner and safety policy.
+- Reuses one DSH worker session for implementation and correction turns.
+- Uses branch-backed permanent worktrees owned by `dsh-task-worktree`.
+- Accepts only loopback DSH Web URLs.
+- Validates the worktree path, Git registration, branch, HEAD, and clean start.
+- Requires a clean source worktree. A remote push is unnecessary, but the full
+  baseline must exist in local `HEAD`.
+- Keeps Codex responsible for independent diff review and verification.
+- Requires separate approval before DSH bring-back or removal.
+- Retains the original headless Runner as an explicit legacy mode.
 
 ## Requirements
 
 - Node.js `>=22.18.0`
-- pnpm `9.15.4` or a compatible pnpm 9 release
-- A locally installed and authenticated Qoder CLI
+- pnpm 9
+- A compatible DeepSeek Harness `0.1.0-rc.7` installation
+- Git 2.31+
+- `dsh-task-worktree` installed in the Web profile
+- A working DSH model configuration
 
-Make `qodercli` available on `PATH` for the Codex process, or configure its
-absolute path with `QODERCLI_PATH` (or `--qodercli-path` for one invocation).
-On Windows, configure the native `qodercli.exe`; command shims such as
-`qodercli.cmd` and `qodercli.bat` are rejected so the Runner can keep
-`shell: false` and preserve argument boundaries.
-The Runner never guesses an installation path beneath a user's home directory.
-It records the Qoder version used during verification but does not hard-fail on
-a different CLI version.
-
-## Enable `request_user_input` in Codex
-
-In a Codex environment, enable `request_user_input` support in `config.toml`:
-
-```ini
-[features]
-default_mode_request_user_input = true
+```powershell
+dsh plugin --profile web add dsh-task-worktree
+dsh --profile web --no-open
 ```
 
-## Install the Skill
+The default URL is `http://127.0.0.1:3080`. Use `DSH_WEB_URL` or `--web-url`
+for another loopback port.
 
-For a project-local Skill:
+## Install the Skills
 
-```sh
-mkdir -p /path/to/project/.codex/skills
-cp -R skill/qoder-agent /path/to/project/.codex/skills/qoder-agent
-cp -R skill/qoder-worker /path/to/project/.codex/skills/qoder-worker
+Copy `skill/dsh-agent` and `skill/dsh-worker` into a project's
+`.codex/skills/` directory or the personal Codex skills directory.
+
+Invoke the main Skill with `$dsh-agent`. It prepares the DSH-owned worktree,
+builds a bounded brief, reuses the worker session for corrections, reviews the
+candidate, and waits for explicit approval before bring-back.
+
+## Web CLI
+
+```powershell
+node skill/dsh-agent/scripts/dsh_web.mjs prepare `
+  --cwd C:\absolute\project `
+  --name codex/task-name
+
+node skill/dsh-agent/scripts/dsh_web.mjs run `
+  --state C:\absolute\state.json `
+  --prompt-file C:\absolute\delegation-brief.md
+
+node skill/dsh-agent/scripts/dsh_web.mjs inspect --state C:\absolute\state.json
+node skill/dsh-agent/scripts/dsh_web.mjs status --state C:\absolute\state.json
+
+# Explicit user approval required:
+node skill/dsh-agent/scripts/dsh_web.mjs bring-back --state C:\absolute\state.json
+node skill/dsh-agent/scripts/dsh_web.mjs remove --state C:\absolute\state.json
 ```
 
-For personal use, copy both directories to `~/.codex/skills/` or the configured
-Codex skills directory. `qoder-worker` is a compatibility alias that requires
-the co-installed `qoder-agent`; keep the executable bit on its
-`scripts/run_qoder.mjs`.
+See [the Skill](skill/dsh-agent/SKILL.md),
+[the Web protocol](skill/dsh-agent/references/protocol.md), and
+[the review lifecycle](skill/dsh-agent/references/worktree-review.md) for the
+complete contract.
 
-## Run the Runner
+## Development
 
-For a worktree task, pass the Codex session's authorized `hostCwd` to the
-coordinator and pass its returned `qoderCwd` to the Runner. The brief should
-separately declare the narrower expected task changes. Write generated or
-multiline briefs to a private file with a non-shell editor or file-writing tool:
-
-```sh
-node skill/qoder-agent/scripts/run_qoder.mjs \
-  --cwd /absolute/path/to/qoderCwd \
-  --prompt-file /absolute/path/to/delegation-brief.md
-```
-
-The inline `--prompt` form remains available for compatibility, but generated
-briefs must not be interpolated into a shell command.
-
-Optional flags are `--qodercli-path`, `--model`, `--timeout-ms`, and
-`--max-model-request-retries`. The environment equivalents are
-`QODERCLI_PATH`, `QODER_MODEL`, `QODER_TIMEOUT_MS`, and
-`QODER_MAX_MODEL_REQUEST_RETRIES`. The Runner always uses `permission-mode
-auto`, JSON output, no session persistence, argument-array spawning, bounded
-model retries and output, redaction, hidden Windows subprocesses, and
-platform-specific process-tree termination.
-
-The default timeout is 30 minutes. When the user explicitly identifies a
-delegated task as long running, the Skill passes `--timeout-ms 3600000` to give
-that invocation a one-hour timeout and changes result polling from the ordinary
-200-second outer/180-second inner waits to 300-second outer/280-second inner
-waits.
-
-Invoke `$qoder-agent` or `$qoder-worker`; both use the same Runner. Read
-[skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) for the Codex
-collaboration workflow,
-[skill/qoder-agent/references/delegation-prompt.md](skill/qoder-agent/references/delegation-prompt.md)
-for the context-aware `Qoder Delegation Brief v1` compiled by Codex,
-[skill/qoder-agent/references/worktree-review.md](skill/qoder-agent/references/worktree-review.md)
-for the isolated review, correction, recovery, and apply lifecycle, and
-[skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
-for the result envelope.
-
-## Isolated worktree lifecycle
-
-Code-changing tasks use a temporary detached Git worktree. The coordinator
-mirrors tracked and non-ignored source state. A repository-root `.qoderinclude`
-may select ignored files, such as generated OpenAPI schemas, as copied check
-inputs when they exist locally. These files never enter the baseline, review patch, or
-source apply operation.
-
-`.qoderinclude` uses repository-relative glob patterns. Ordinary rules include,
-`!` rules exclude, and the last matching rule wins. Missing matches, tracked or
-non-ignored matches, and matches outside the requested `cwd` are skipped without
-failing `prepare`; a non-empty configuration with no local matches produces an
-empty manifest. Git efficiently enumerates ordinary ignored files, while a
-glob-directed filesystem scan detects matched special files without imposing
-literal-root restrictions on patterns such as `*.json`, `generated/*.ts`, or
-`packages/*/generated/**`. The snapshot is limited to 20,000 entries and
-256 MiB. Unsafe links, special files, invalid paths, and over-limit selections
-make `prepare` fail. This project declaration does not authorize disclosure of
-secrets or unrelated local data to Qoder.
-
-The v2 session validates the manifest against its recorded SHA-256 and
-summary to detect accidental coordinator-state damage. Inspect, review, reopen,
-and apply share its exclusion set. Included ignored artifacts may change inside
-the temporary worktree, but their prepared paths remain local check inputs and
-cannot enter the Qoder-only patch or source apply operation. This is a
-cooperative integrity check, not a sandbox against a malicious worker.
-
-After explicit review approval, `apply` checks and applies the Qoder-only patch
-without staging the source, then automatically removes the temporary worktree and session. If
-application fails, the session is retained for diagnosis; if cleanup fails
-after application, retry `dispose --state <statePath>`. Use
-`dispose --state <statePath> --discard` only to discard an unapplied session.
-Use `reopen --state <statePath>` for a rejected review candidate; it archives
-the old patch and preserves the complete working tree for correction. A
-trustworthy failed Runner also continues in the same prepared worktree after
-inspection and explicit approval. Use `prepare --retry-of
-<previous-statePath>` only for a clean restart or an unsafe-to-reuse session. A
-successful apply then removes the new session and its linked predecessors.
-
-## Development checks
-
-```sh
+```powershell
 pnpm install
 pnpm skill:check
 pnpm typecheck
@@ -209,46 +102,9 @@ pnpm test
 pnpm build
 ```
 
-The maintained implementation lives in TypeScript under `packages/core` and
-`packages/cli`. `packages/core` owns the reusable Runner and worktree lifecycle;
-`packages/cli` owns argument parsing, process signals, JSON output, and exit
-codes and depends on core through the `@qoder-agent-bridge/core` workspace
-package boundary. TypeScript source uses bundler-style extensionless imports.
-`pnpm build` emits package artifacts and regenerates the committed,
-self-contained Skill executables in `skill/qoder-agent/scripts/`. Do not edit
-those generated `.mjs` files directly.
-
-## Optional real verification
-
-Default checks use fake child-process boundaries and do not invoke a Qoder
-model. For an explicit end-to-end check, use a disposable repository outside
-this project and create its baseline commit manually. Before running the
-commands, use a trusted editor or non-shell file-writing tool to create the
-private file `/absolute/path/to/qoder-verification-brief.md` outside the
-fixture, containing the bounded verification task:
-
-```sh
-fixture="$(mktemp -d /tmp/qoder-agent-fixture.XXXXXX)"
-printf 'before\n' > "$fixture/example.txt"
-git -C "$fixture" init
-git -C "$fixture" config user.name "Qoder Fixture"
-git -C "$fixture" config user.email "qoder-fixture@example.invalid"
-git -C "$fixture" add example.txt
-git -C "$fixture" commit -m baseline
-
-qodercli --version
-node skill/qoder-agent/scripts/run_qoder.mjs \
-  --cwd "$fixture" \
-  --prompt-file /absolute/path/to/qoder-verification-brief.md
-
-git -C "$fixture" status --short
-git -C "$fixture" diff
-git -C "$fixture" remote -v
-```
-
-If Qoder reports permission denial, authentication failure, timeout, or any
-other failure, stop and inspect the returned envelope. Do not retry with a
-different permission mode.
+TypeScript sources live under `packages/core` and `packages/cli`. `pnpm build`
+regenerates the self-contained Skill executables in
+`skill/dsh-agent/scripts/`; do not edit generated `.mjs` files directly.
 
 ## License
 

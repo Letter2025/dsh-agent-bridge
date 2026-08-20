@@ -17,7 +17,7 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@qoder-agent-bridge/core": ["./packages/core/src/index.ts"]
+      "@dsh-agent-bridge/core": ["./packages/core/src/index.ts"]
     }
   },
   "include": [

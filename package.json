@@ -1,8 +1,8 @@
 {
-  "name": "qoder-agent-bridge",
+  "name": "dsh-agent-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "Bridge Qoder into your agent workflow through Skills and CLI.",
+  "description": "Bridge DSH into your agent workflow through Skills and CLI.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -12,7 +12,7 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
-    "skill:check": "pnpm skill:artifacts:check && pnpm skill:build && node --check skill/qoder-agent/scripts/run_qoder.mjs && node --check skill/qoder-agent/scripts/qoder_worktree.mjs && pnpm test && if python3 -c 'import yaml' >/dev/null 2>&1; then python3 /Users/lei/.codex/skills/.system/skill-creator/scripts/quick_validate.py skill/qoder-agent && python3 /Users/lei/.codex/skills/.system/skill-creator/scripts/quick_validate.py skill/qoder-worker; else node scripts/validate_skill.mjs skill/qoder-agent && node scripts/validate_skill.mjs skill/qoder-worker; fi",
+    "skill:check": "pnpm skill:artifacts:check && pnpm skill:build && node --check skill/dsh-agent/scripts/dsh_web.mjs && node --check skill/dsh-agent/scripts/run_dsh.mjs && node --check skill/dsh-agent/scripts/dsh_worktree.mjs && pnpm test && node scripts/validate_skill.mjs skill/dsh-agent && node scripts/validate_skill.mjs skill/dsh-worker",
     "test": "vitest run",
     "typecheck": "tsc --noEmit --project tsconfig.json"
   },

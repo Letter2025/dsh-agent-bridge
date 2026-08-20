@@ -5,7 +5,8 @@ export {
   WINDOWS_COMMAND_LINE_LIMIT_UTF16,
 } from "./constants";
 export { createPreflightFailure } from "./protocol";
-export { executeRunner, runQoder } from "./run-qoder";
+export { parseTimeout, resolvePrompt } from "./config";
+export { executeRunner, runDsh } from "./run-dsh";
 export {
   RunnerError,
   type ParsedRunnerArgs,

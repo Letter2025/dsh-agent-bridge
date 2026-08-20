@@ -14,9 +14,11 @@ export function createEnvelope(
     runnerVersion: RUNNER_VERSION,
     status: values.status ?? "failed",
     cwd: values.cwd ?? null,
+    dshPath: values.dshPath ?? null,
     executable: values.executable ?? null,
-    permissionMode: "auto",
-    outputFormat: "json",
+    profile: "headless",
+    sessionMode: "fresh_persisted",
+    outputFormat: "text",
     exitCode: values.exitCode ?? null,
     signal: values.signal ?? null,
     durationMs: Math.max(0, Math.round(values.durationMs)),
@@ -25,7 +27,7 @@ export function createEnvelope(
     stderr: values.stderr ?? "",
     stdoutTruncated: values.stdoutTruncated ?? false,
     stderrTruncated: values.stderrTruncated ?? false,
-    qoderOutput: values.qoderOutput ?? { format: "json", raw: values.stdout ?? "" },
+    dshOutput: values.dshOutput ?? { format: "text", raw: values.stdout ?? "" },
     retryable: values.retryable ?? false,
     recovery: values.recovery ?? null,
     error: values.error,
@@ -36,7 +38,7 @@ function errorShape(error: unknown): RunnerErrorShape {
   if (error instanceof RunnerError) {
     return { code: error.code, message: error.message };
   }
-  return { code: "internal_error", message: "Runner failed before Qoder execution completed." };
+  return { code: "internal_error", message: "Runner failed before DSH execution completed." };
 }
 
 export function createPreflightFailure(

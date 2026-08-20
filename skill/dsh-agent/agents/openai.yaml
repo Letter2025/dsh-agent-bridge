@@ -1,0 +1,4 @@
+interface:
+  display_name: "DSH Agent"
+  short_description: "Orchestrate persistent DSH worktree sessions"
+  default_prompt: "Use $dsh-agent to direct DSH Web to create a task worktree, implement the change in one persistent DSH session, and bring it back only after review and approval."

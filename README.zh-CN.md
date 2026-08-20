@@ -1,173 +1,138 @@
-# Qoder Agent Bridge
+# DSH Agent Bridge
 
 [English](README.md)
 
-Qoder Agent Bridge 是一个由 Skill 和 CLI 构成的编码 Harness，通过受边界约束的
-一次性执行将本机 Qoder 接入 Agent 工作流。核心流程是一个结构化 loop：主 Agent 负责规划，
-Qoder 负责执行，主 Agent 负责审阅，再由 Qoder 根据审阅结果修复，循环直到结果通过验收或达
-到有界流程的停止条件。通过拆分规划与审阅，引入交叉审查，提升编码结果的质量，同时让每次编码执
-行都保持可控、可审计。
+DSH Agent Bridge 将 Codex 与 DeepSeek Harness 组合成一个有边界的编码工作流：
+Codex 负责规划、上下文编译、代码审阅和验收；DSH 负责在自己的永久任务 worktree
+中编码，并在同一个 Web Session 中持续接收修复指令。
 
-当前的主要实现是可复用的 `qoder-agent` Skill 和本地 Qoder CLI Runner；后续也可以
-接入其他满足 OpenAI Skill 规范的 Agent，共用这套 Harness。
+项目基于 MIT 许可的
+[`lei233/qoder-agent-bridge`](https://github.com/lei233/qoder-agent-bridge)
+改造，并针对 DSH Web RPC、持久会话以及
+[`dsh-task-worktree`](https://github.com/Letter2025/dsh-task-worktree)
+重新实现了工作区编排层。
 
-## Feature 状态
+## 默认工作流
 
-| Feature                        | 状态                                 |
-| ------------------------------ | ------------------------------------ |
-| Skill + CLI 编码 Harness       | 当前重点；已实现并持续打磨           |
-| 主 Agent 规划与审阅            | 核心流程；负责执行、验收和修复驱动   |
-| 规划 → 执行 → 审阅 → 修复 loop | 核心方向；通过结构化审阅提升结果质量 |
-| 其他 Skill 兼容 Agent          | 可扩展方向；可接入同一套 Harness     |
+```text
+Codex 规划
+  ↓
+通过 DSH Web 创建 controller session
+  ↓
+DSH 执行 /worktree create <name>
+  ↓
+dsh-task-worktree 创建永久 worktree
+  ↓
+桥接器校验路径、分支和 base commit
+  ↓
+创建 cwd=worktree 的 worker session
+  ↓
+DSH 编码 ←→ Codex 审阅与修复指令
+  ↓
+用户批准
+  ↓
+DSH 执行 /worktree bring-back <name>
+```
 
-## 当前 Skill 支持的特性
+Codex 不会导入或直接调用 `dsh-task-worktree`。所有插件操作都通过 DSH Web 的
+RPC 和 command registry 执行。
 
-- 通过本地 Qoder CLI 进行 one-shot、非交互式委派；`qoder-worker` 提供兼容别名。
-- 结构化执行 loop：主 Agent 规划，Qoder 执行，主 Agent 审阅，Qoder 修复，直到结果
-  通过验收或有界流程停止。
-- 由 Codex 从适用的项目说明、OpenSpec 产物、规格文件以及已安装 Codex Skill
-  中提炼规则，生成上下文完整的委派 brief；Qoder 无需安装或理解这些 Skill。
-- 渐进式 brief：简单任务只使用精简基础契约，仅在确有需要时加入项目上下文和
-  专业规则。
-- 三态 Brief Review（Spec）策略：支持显式 `required`、`off`，默认使用基于风险
-  判断的 `auto`；Spec 模式用于预览委派 brief，不等同于生成 OpenSpec。
-- 首次向外部 Qoder 外发数据及 Brief Review 在宿主支持结构化用户输入时优先使用
-  卡片确认；不支持时回退为文本确认，且无需回复固定授权文案。
-- 继承 Codex session 宿主目录的工作目录和固定安全策略，禁止写出 `cwd`、处理凭证、
-  发布内容以及执行 Git 历史相关操作。
-- 代码修改任务使用临时 detached worktree，可生成精确的 Qoder-only patch、独立
-  审阅、执行冲突预检，并在应用到源 worktree 前等待明确批准。
-- 使用 prompt 文件安全传递生成的或多行 brief，进行有界、文件身份校验的读取，
-  不把 brief 插值进 shell 命令。
-- 提供结构化结果 envelope、有界模型重试和输出、脱敏、超时、信号处理以及按平台
-  终止进程树。
-- 支持审查失败后原 worktree 修正、可信 Runner 失败原地恢复，以及关联 clean-restart
-  session 清理，不依赖 Qoder 持久会话。
+## 主要能力
 
-## 注意事项
-
-- Codex 始终负责规划、上下文编译、审阅和最终验收；Qoder 是有边界的编码执行器，
-  不是一个可自主扩展任务的对等会话。
-- 代码修改的 worktree 隔离要求 Git 仓库已有 `HEAD` commit 且不存在 unmerged
-  path；ignored 文件默认不可用，仓库根目录的 `.qoderinclude` 可显式快照本地存在的
-  ignored 构建输入候选；该配置与文件都不是硬依赖。
-- `cwd` 继承 Codex 当前 session 的授权目录，通常是仓库根目录。预期修改范围应在
-  brief 中单独声明；不能为了让 Qoder 读取上下文而越过宿主目录边界。
-- brief 审批只授权执行一次 Qoder 任务；把审阅后的 patch 应用到源 worktree 始终
-  需要另一次明确批准。
-- 本机必须已具备 Qoder 登录状态以及任务所需的 host/network 条件。执行失败时先停止，
-  不得自动重试或扩大权限；外部条件修复并获得批准后，可信半成品应在原 prepared
-  worktree 中继续。
-- 不要在委派 brief 中加入凭证或秘密。生成的 brief 必须通过非 shell 文件写入工具
-  创建，并使用 `--prompt-file` 传递。
-- prompt 内容上限为 64 KiB；Windows 还可能因完整 `CreateProcessW` 命令行限制而
-  具有更低的实际容量，Runner 会在启动 Qoder 前预检并返回 `invalid_input`。
-- `qoder-worker` 依赖同目录安装的 `qoder-agent`；两个入口共用同一 Runner 和安全
-  策略。
+- 复用同一个 DSH `workerSessionId`，保留对话和文件上下文。
+- 使用 `dsh-task-worktree` 创建分支型永久 worktree。
+- 仅连接 `127.0.0.1`、`localhost` 或 `::1` 上的 DSH Web。
+- 校验 worktree 路径、Git 注册、分支、HEAD 和初始 clean 状态。
+- 源工作区必须 clean；不要求 push，但完整基线必须存在于本地 `HEAD`。
+- Codex 独立检查 diff、未跟踪文件和测试结果。
+- 最多两轮同范围 DSH 修复。
+- bring-back 和 remove 始终需要单独用户批准。
+- 保留原有 headless Runner 作为显式兼容模式。
 
 ## 环境要求
 
 - Node.js `>=22.18.0`
-- pnpm `9.15.4` 或兼容的 pnpm 9 版本
-- 已安装并完成登录的本地 Qoder CLI
+- pnpm 9
+- DeepSeek Harness `0.1.0-rc.7` 兼容版本
+- Git 2.31+
+- Web profile 中安装 `dsh-task-worktree`
+- 已配置可用的 DSH 模型
 
-请将 `qodercli` 加入 Codex 进程的 `PATH`，或通过 `QODERCLI_PATH`
-（单次调用可用 `--qodercli-path`）配置其绝对路径。Runner 不会猜测某个用户主目录
-下的安装位置。在 Windows 上必须配置原生 `qodercli.exe`；Runner 会拒绝
-`qodercli.cmd`、`qodercli.bat` 等命令 shim，以便保持 `shell: false` 和参数边界。
-Runner 会记录验证时使用的 Qoder 版本，但不会因版本不同而硬失败。
+安装插件并启动 Web profile：
 
-## 在 Codex 中开启 `request_user_input`
-
-在 Codex 环境中，可以在 `config.toml` 中开启 `request_user_input` 支持：
-
-```ini
-[features]
-default_mode_request_user_input = true
+```powershell
+dsh plugin --profile web add dsh-task-worktree
+dsh --profile web --no-open
 ```
 
-## 安装 Skill
+默认 URL 为 `http://127.0.0.1:3080`。若端口不同，可设置 `DSH_WEB_URL` 或在命令中
+传入 `--web-url`。
+
+## 安装 Codex Skill
 
 项目级安装：
 
-```sh
-mkdir -p /path/to/project/.codex/skills
-cp -R skill/qoder-agent /path/to/project/.codex/skills/qoder-agent
-cp -R skill/qoder-worker /path/to/project/.codex/skills/qoder-worker
+```text
+<project>/.codex/skills/dsh-agent/
+<project>/.codex/skills/dsh-worker/
 ```
 
-个人级安装：将两个目录复制到 `~/.codex/skills/` 或已配置的 Codex Skill 目录。
-`qoder-worker` 是依赖同目录 `qoder-agent` 的兼容别名；请保留后者
-`scripts/run_qoder.mjs` 的可执行权限。
+个人安装：将 `skill/dsh-agent` 和 `skill/dsh-worker` 复制到
+`~/.codex/skills/`。
 
-## 运行 Runner
+在 Codex 中使用：
 
-对于 worktree 任务，应将 Codex 当前 session 已授权的 `hostCwd` 传给 coordinator，
-再将 coordinator 返回的 `qoderCwd` 传给 Runner。预期修改范围应在 brief 中单独声明。
-请使用非 shell 的编辑器或文件写入工具，把生成的或多行 brief 写入私有文件：
-
-```sh
-node skill/qoder-agent/scripts/run_qoder.mjs \
-  --cwd /absolute/path/to/qoderCwd \
-  --prompt-file /absolute/path/to/delegation-brief.md
+```text
+使用 $dsh-agent 完成这个任务。你负责规划和验收，让 DSH 创建永久 worktree，
+在同一个 DSH Web Session 中实现和修复，验收通过后再向我申请 bring-back。
 ```
 
-内联 `--prompt` 仅为兼容保留；不得把生成的 brief 插值进 shell 命令。
+## Web 编排 CLI
 
-可选参数为 `--qodercli-path`、`--model`、`--timeout-ms` 和
-`--max-model-request-retries`，对应环境变量为 `QODERCLI_PATH`、
-`QODER_MODEL`、`QODER_TIMEOUT_MS` 和 `QODER_MAX_MODEL_REQUEST_RETRIES`。
-Runner 始终使用 `permission-mode auto`、JSON 输出、禁用会话持久化、参数数组启动、
-有界模型重试和输出限制、脱敏、隐藏 Windows 子进程和按平台终止进程树。
+创建插件 worktree 和持久 DSH Session：
 
-默认超时时间为 30 分钟。如果用户显式说明委派任务是长任务，Skill 会为该次调用传入
-`--timeout-ms 3600000`，将超时时间设为 1 小时，并把结果轮询从普通任务的外层
-200 秒/内层 180 秒切换为外层 300 秒/内层 280 秒。
+```powershell
+node skill/dsh-agent/scripts/dsh_web.mjs prepare `
+  --cwd C:\absolute\project `
+  --name codex/task-name
+```
 
-可通过 `$qoder-agent` 或 `$qoder-worker` 调用，两者使用同一个 Runner。请阅读
-[skill/qoder-agent/SKILL.md](skill/qoder-agent/SKILL.md) 了解 Codex 协作
-流程，阅读
-[skill/qoder-agent/references/delegation-prompt.md](skill/qoder-agent/references/delegation-prompt.md)
-了解由 Codex 编译上下文的 `Qoder Delegation Brief v1`，阅读
-[skill/qoder-agent/references/worktree-review.md](skill/qoder-agent/references/worktree-review.md)
-了解隔离审查、修正、恢复和应用生命周期，并阅读
-[skill/qoder-agent/references/protocol.md](skill/qoder-agent/references/protocol.md)
-了解结果 envelope。
+执行首轮编码或后续修复：
 
-## 隔离 worktree 生命周期
+```powershell
+node skill/dsh-agent/scripts/dsh_web.mjs run `
+  --state C:\absolute\state.json `
+  --prompt-file C:\absolute\delegation-brief.md
+```
 
-涉及代码修改的任务会使用临时 detached Git worktree。协调器镜像已跟踪和
-non-ignored 的源码状态。仓库根目录的 `.qoderinclude` 可选择 OpenAPI schemas 等
-本地 ignored 文件，在文件存在时于临时 worktree 中建立副本用于检查；它们不会进入 baseline、
-审阅 patch 或源目录 apply。
+检查状态：
 
-`.qoderinclude` 使用仓库相对 glob：普通规则纳入，`!` 规则排除，最后匹配规则生效。
-不存在的匹配、tracked 或 non-ignored 匹配以及本次 `cwd` 范围外的匹配会被安静跳过；
-非空配置最终未匹配本地文件时仍会生成空 manifest。Git 负责高效枚举普通 ignored 文件，
-协调器按 glob 结构定向扫描特殊文件，因此 `*.json`、`generated/*.ts` 和
-`packages/*/generated/**` 等规则不需要额外的字面 ignored 根目录。快照上限为
-20,000 个条目和
-256 MiB；不安全链接、特殊文件、非法路径或超限选择都会使 `prepare` 失败。该配置只
-声明项目依赖，不代表允许向 Qoder 披露密钥或无关本地数据。
+```powershell
+node skill/dsh-agent/scripts/dsh_web.mjs inspect --state C:\absolute\state.json
+node skill/dsh-agent/scripts/dsh_web.mjs status --state C:\absolute\state.json
+```
 
-session v2 使用记录的 SHA-256 和摘要验证 manifest，防止协调状态意外损坏；inspect、
-审阅、reopen 与 apply 共用其排除集合。included ignored artifact 可以在临时 worktree
-中变化，但 prepare 时登记的路径只作为本地检查输入，不能进入 Qoder-only patch 或源目录
-apply。该校验采用协作式信任模型，不构成针对恶意 worker 的沙箱。
+用户明确批准后带回或删除：
 
-用户明确批准后，`apply` 会先检查并应用 Qoder 专属 patch，不会修改 source 的
-Git index，应用成功后会自动删除临时 worktree 和 session。应用失败时会保留
-session 供排查；如果 patch 已应用但清理失败，可重试
-`dispose --state <statePath>`。只有放弃未应用的 session 时才使用
-`dispose --state <statePath> --discard`。审查候选被拒绝时使用
-`reopen --state <statePath>`，它会归档旧 patch 并保留完整 working tree 供后续修正。
-可信 Runner 失败经检查和明确批准后也继续使用原 prepared worktree。只有明确要求
-clean restart 或原 session 不可安全复用时，才在 `prepare` 中传入
-`--retry-of <previous-statePath>`；成功 apply 后会清理关联 session 链。
+```powershell
+node skill/dsh-agent/scripts/dsh_web.mjs bring-back --state C:\absolute\state.json
+node skill/dsh-agent/scripts/dsh_web.mjs remove --state C:\absolute\state.json
+```
+
+`--force` 只用于用户明确批准丢弃 dirty worktree 的 remove 操作。
+
+## 安全边界
+
+- Web Bridge 只接受 loopback HTTP URL。
+- 编码 brief 发送给 DSH 模型前必须取得任务范围的数据授权。
+- DSH 模型不得 commit、stage、push、发布、处理凭据或修改 DSH 配置。
+- bring-back 是独立的 DSH command，可能创建 worktree commit 并合并到源分支。
+- 不允许同时使用新版 Web worktree 和旧版临时 worktree coordinator。
+- Web 模式不会携带源工作区未提交改动；dirty source 会直接失败。
 
 ## 开发检查
 
-```sh
+```powershell
 pnpm install
 pnpm skill:check
 pnpm typecheck
@@ -177,42 +142,9 @@ pnpm test
 pnpm build
 ```
 
-维护源码位于 `packages/core` 和 `packages/cli` 的 TypeScript 文件中：`core`
-负责可复用的 Runner 与 worktree 生命周期，`cli` 负责参数解析、进程信号、JSON
-输出和退出码，并通过 `@qoder-agent-bridge/core` workspace package 引用 core。
-TypeScript 源码统一使用 bundler 风格的无扩展名导入。`pnpm build` 会同时生成 package 产物，以及提交到
-`skill/qoder-agent/scripts/` 的自包含 Skill 可执行文件。不要直接修改这些生成的
-`.mjs` 文件。
+维护源码位于 `packages/core` 和 `packages/cli`。`pnpm build` 会重新生成
+`skill/dsh-agent/scripts/` 下的独立可执行文件，请勿直接编辑生成的 `.mjs`。
 
-## 可选真实验收
-
-默认检查使用 fake child-process boundary，不会调用 Qoder 模型。如需显式执行端到端
-验收，请在项目仓库之外创建临时仓库并手动创建 baseline commit。运行以下命令前，
-请使用可信编辑器或非 shell 文件写入工具，在 fixture 外创建私有文件
-`/absolute/path/to/qoder-verification-brief.md`，并写入有边界的验收任务：
-
-```sh
-fixture="$(mktemp -d /tmp/qoder-agent-fixture.XXXXXX)"
-printf 'before\n' > "$fixture/example.txt"
-git -C "$fixture" init
-git -C "$fixture" config user.name "Qoder Fixture"
-git -C "$fixture" config user.email "qoder-fixture@example.invalid"
-git -C "$fixture" add example.txt
-git -C "$fixture" commit -m baseline
-
-qodercli --version
-node skill/qoder-agent/scripts/run_qoder.mjs \
-  --cwd "$fixture" \
-  --prompt-file /absolute/path/to/qoder-verification-brief.md
-
-git -C "$fixture" status --short
-git -C "$fixture" diff
-git -C "$fixture" remote -v
-```
-
-如果 Qoder 返回权限拒绝、认证失败、超时或其他失败，停止并检查返回 envelope，
-不要切换到其他权限模式重试。
-
-## 许可证
+## License
 
 MIT，详见 [LICENSE](LICENSE)。

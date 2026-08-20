@@ -14,7 +14,7 @@ import {
   type IncludedIgnoredArtifacts,
 } from "./types";
 
-const CONFIG_FILE_NAME = ".qoderinclude";
+const CONFIG_FILE_NAME = ".dshinclude";
 
 interface IncludeRule {
   source: string;
@@ -40,7 +40,7 @@ function validateBalancedBrackets(value: string, line: number): void {
     if (value[contentStart] === "]") contentStart += 1;
     const close = value.indexOf("]", contentStart);
     if (close === -1) {
-      invalidConfig(`.qoderinclude line ${line} has an invalid character group.`);
+      invalidConfig(`.dshinclude line ${line} has an invalid character group.`);
     }
     index = close;
   }
@@ -57,22 +57,22 @@ function parseRule(source: string, line: number): IncludeRule | null {
     exclude = true;
     value = value.slice(1).trim();
   }
-  if (value === "") invalidConfig(`.qoderinclude line ${line} has an empty pattern.`);
-  if (value.includes("\0")) invalidConfig(`.qoderinclude line ${line} contains a NUL byte.`);
+  if (value === "") invalidConfig(`.dshinclude line ${line} has an empty pattern.`);
+  if (value.includes("\0")) invalidConfig(`.dshinclude line ${line} contains a NUL byte.`);
   if (/^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("//")) {
-    invalidConfig(`.qoderinclude line ${line} must be repository-relative.`);
+    invalidConfig(`.dshinclude line ${line} must be repository-relative.`);
   }
   if (value.startsWith("/")) value = value.slice(1);
   if (isAbsolute(value)) {
-    invalidConfig(`.qoderinclude line ${line} must be repository-relative.`);
+    invalidConfig(`.dshinclude line ${line} must be repository-relative.`);
   }
 
   const segments = value.split("/");
   if (segments.includes("..")) {
-    invalidConfig(`.qoderinclude line ${line} may not escape the repository.`);
+    invalidConfig(`.dshinclude line ${line} may not escape the repository.`);
   }
   if (segments.some((segment) => segment.toLowerCase() === ".git")) {
-    invalidConfig(`.qoderinclude line ${line} may not select .git.`);
+    invalidConfig(`.dshinclude line ${line} may not select .git.`);
   }
   validateBalancedBrackets(value, line);
   if (value.endsWith("/")) value += "**";
@@ -88,7 +88,7 @@ export async function readIncludedArtifactConfig(
   try {
     const information = await lstat(configPath);
     if (!information.isFile() || information.isSymbolicLink()) {
-      invalidConfig(".qoderinclude must be a regular file in the repository root.");
+      invalidConfig(".dshinclude must be a regular file in the repository root.");
     }
     bytes = await readFile(configPath);
   } catch (error) {
@@ -100,7 +100,7 @@ export async function readIncludedArtifactConfig(
   try {
     contents = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    invalidConfig(".qoderinclude must contain valid UTF-8 text.");
+    invalidConfig(".dshinclude must contain valid UTF-8 text.");
   }
   if (contents.charCodeAt(0) === 0xfeff) contents = contents.slice(1);
   const rules = contents
@@ -153,7 +153,7 @@ async function listRuleMatches(root: string, rule: IncludeRule): Promise<string[
     return output.split("\0").filter((path) => path !== "");
   } catch (error) {
     if (error instanceof WorktreeError && error.code === "git_failed") {
-      invalidConfig(`.qoderinclude line ${rule.line} contains an invalid glob pattern.`);
+      invalidConfig(`.dshinclude line ${rule.line} contains an invalid glob pattern.`);
     }
     throw error;
   }
@@ -309,13 +309,13 @@ export function enforceIncludedArtifactLimits(fileCount: number, totalBytes: num
   if (fileCount > MAX_INCLUDED_ARTIFACT_FILES) {
     throw new WorktreeError(
       "include_limit_exceeded",
-      `.qoderinclude selected more than ${MAX_INCLUDED_ARTIFACT_FILES} files.`,
+      `.dshinclude selected more than ${MAX_INCLUDED_ARTIFACT_FILES} files.`,
     );
   }
   if (totalBytes > MAX_INCLUDED_ARTIFACT_BYTES) {
     throw new WorktreeError(
       "include_limit_exceeded",
-      `.qoderinclude selected more than ${MAX_INCLUDED_ARTIFACT_BYTES} bytes.`,
+      `.dshinclude selected more than ${MAX_INCLUDED_ARTIFACT_BYTES} bytes.`,
     );
   }
 }

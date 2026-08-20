@@ -23,13 +23,13 @@ import {
   inspectWorktree,
   prepareWorktree,
   reopenReviewWorktree,
-} from "@qoder-agent-bridge/core";
-import { executeWorktreeCommand, parseWorktreeArgs } from "../packages/cli/src/qoder-worktree";
+} from "@dsh-agent-bridge/core";
+import { executeWorktreeCommand, parseWorktreeArgs } from "../packages/cli/src/dsh-worktree";
 import { enforceIncludedArtifactLimits } from "../packages/core/src/worktree/included-artifacts";
 
 const fixtures: string[] = [];
 const worktreeRunnerPath = fileURLToPath(
-  new URL("../skill/qoder-agent/scripts/qoder_worktree.mjs", import.meta.url),
+  new URL("../skill/dsh-agent/scripts/dsh_worktree.mjs", import.meta.url),
 );
 
 afterEach(async () => {
@@ -52,11 +52,13 @@ async function pathExists(path: string) {
 }
 
 async function createFixture() {
-  const root = await mkdtemp(join(tmpdir(), "qoder-worktree-test-"));
+  const root = await mkdtemp(join(tmpdir(), "dsh-worktree-test-"));
   fixtures.push(root);
   git(root, ["init", "--initial-branch=main"]);
+  git(root, ["config", "core.autocrlf", "false"]);
+  git(root, ["config", "core.eol", "lf"]);
   git(root, ["config", "user.email", "test@example.com"]);
-  git(root, ["config", "user.name", "Qoder Worktree Test"]);
+  git(root, ["config", "user.name", "DSH Worktree Test"]);
   await writeFile(join(root, "tracked.txt"), "base\n");
   git(root, ["add", "tracked.txt"]);
   git(root, ["commit", "-m", "initial"]);
@@ -64,12 +66,10 @@ async function createFixture() {
 }
 
 async function listSessionRoots() {
-  return (await readdir(tmpdir()))
-    .filter((name) => name.startsWith("qoder-agent-worktree-"))
-    .sort();
+  return (await readdir(tmpdir())).filter((name) => name.startsWith("dsh-agent-worktree-")).sort();
 }
 
-describe("Qoder isolated worktree coordinator", () => {
+describe("DSH isolated worktree coordinator", () => {
   it("validates its narrow lifecycle arguments", () => {
     expect(() => parseWorktreeArgs(["prepare", "--cwd", "relative"])).not.toThrow();
     expect(
@@ -91,7 +91,7 @@ describe("Qoder isolated worktree coordinator", () => {
     ).toThrow(/apply requires/);
   });
 
-  it("reviews and applies only Qoder changes over a dirty source baseline", async () => {
+  it("reviews and applies only DSH changes over a dirty source baseline", async () => {
     const root = await createFixture();
     await writeFile(join(root, "tracked.txt"), "user staged\n");
     git(root, ["add", "tracked.txt"]);
@@ -107,19 +107,19 @@ describe("Qoder isolated worktree coordinator", () => {
     );
     expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("user working\n");
 
-    await writeFile(join(session.worktreeRoot, "tracked.txt"), "qoder result\n");
-    await writeFile(join(session.worktreeRoot, "qoder-new.txt"), "new code\n");
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "dsh result\n");
+    await writeFile(join(session.worktreeRoot, "dsh-new.txt"), "new code\n");
     const inspection = await inspectWorktree(session.statePath);
     expect(inspection).toMatchObject({
       hasChanges: true,
-      changedFiles: ["qoder-new.txt", "tracked.txt"],
+      changedFiles: ["dsh-new.txt", "tracked.txt"],
       indexModified: false,
       session: { phase: "prepared" },
     });
     const review = await createReviewPatch(session.statePath);
 
-    expect(review.changedFiles).toEqual(["qoder-new.txt", "tracked.txt"]);
-    expect(await readFile(session.reviewPatchPath, "utf8")).toContain("qoder result");
+    expect(review.changedFiles).toEqual(["dsh-new.txt", "tracked.txt"]);
+    expect(await readFile(session.reviewPatchPath, "utf8")).toContain("dsh result");
     expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("user working\n");
     expect(await readFile(join(root, "untracked.txt"), "utf8")).toBe("keep this baseline\n");
 
@@ -131,8 +131,8 @@ describe("Qoder isolated worktree coordinator", () => {
       cleaned: true,
     });
 
-    expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("qoder result\n");
-    expect(await readFile(join(root, "qoder-new.txt"), "utf8")).toBe("new code\n");
+    expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("dsh result\n");
+    expect(await readFile(join(root, "dsh-new.txt"), "utf8")).toBe("new code\n");
     expect(await readFile(join(root, "untracked.txt"), "utf8")).toBe("keep this baseline\n");
     expect(git(root, ["diff", "--cached", "--", "tracked.txt"])).toContain("user staged");
     expect(await pathExists(session.worktreeRoot)).toBe(false);
@@ -145,12 +145,12 @@ describe("Qoder isolated worktree coordinator", () => {
     await mkdir(join(root, "src/generated/schemas/cache"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "src/generated/\n");
     await writeFile(
-      join(root, ".qoderinclude"),
+      join(root, ".dshinclude"),
       "# generated types\n/src/generated/schemas/**\n!/src/generated/schemas/cache/**\n",
     );
     await writeFile(join(root, "src/generated/schemas/api.ts"), "export type Api = string;\n");
     await writeFile(join(root, "src/generated/schemas/cache/stale.ts"), "cache\n");
-    git(root, ["add", ".gitignore", ".qoderinclude"]);
+    git(root, ["add", ".gitignore", ".dshinclude"]);
     git(root, ["commit", "-m", "configure generated artifacts"]);
 
     const session = await prepareWorktree(root);
@@ -168,7 +168,7 @@ describe("Qoder isolated worktree coordinator", () => {
       await pathExists(join(session.worktreeRoot, "src/generated/schemas/cache/stale.ts")),
     ).toBe(false);
 
-    await writeFile(join(session.worktreeRoot, "tracked.txt"), "qoder result\n");
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "dsh result\n");
     const review = await createReviewPatch(session.statePath);
     expect(review.changedFiles).toEqual(["tracked.txt"]);
     expect(await readFile(session.reviewPatchPath, "utf8")).not.toContain("generated/schemas");
@@ -183,9 +183,9 @@ describe("Qoder isolated worktree coordinator", () => {
     const schemaPath = "packages/api/src/schemas/api.gen.ts";
     await mkdir(join(root, "packages/api/src/schemas"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "/**/schemas/**.gen.ts\n");
-    await writeFile(join(root, ".qoderinclude"), "packages/api/src/schemas/**\n");
+    await writeFile(join(root, ".dshinclude"), "packages/api/src/schemas/**\n");
     await writeFile(join(root, schemaPath), "export type Api = string;\n");
-    git(root, ["add", ".gitignore", ".qoderinclude"]);
+    git(root, ["add", ".gitignore", ".dshinclude"]);
     git(root, ["commit", "-m", "configure root schema context"]);
 
     const session = await prepareWorktree(root);
@@ -204,9 +204,9 @@ describe("Qoder isolated worktree coordinator", () => {
     await writeFile(join(hostCwd, "placeholder.ts"), "export {}\n");
     await mkdir(join(root, "packages/api/src/schemas"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "/**/schemas/**.gen.ts\n");
-    await writeFile(join(root, ".qoderinclude"), "packages/api/src/schemas/**\n");
+    await writeFile(join(root, ".dshinclude"), "packages/api/src/schemas/**\n");
     await writeFile(join(root, schemaPath), "export type Api = string;\n");
-    git(root, ["add", ".gitignore", ".qoderinclude", "web"]);
+    git(root, ["add", ".gitignore", ".dshinclude", "web"]);
     git(root, ["commit", "-m", "configure nested host context"]);
 
     const session = await prepareWorktree(hostCwd);
@@ -227,7 +227,7 @@ describe("Qoder isolated worktree coordinator", () => {
     await disposeWorktree(missing.statePath, true);
 
     const emptyRoot = await createFixture();
-    await writeFile(join(emptyRoot, ".qoderinclude"), "# no dependencies\n\n");
+    await writeFile(join(emptyRoot, ".dshinclude"), "# no dependencies\n\n");
     const empty = await prepareWorktree(emptyRoot);
     expect(empty.includedIgnoredArtifacts).toBeNull();
     await disposeWorktree(empty.statePath, true);
@@ -271,7 +271,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     await writeFile(join(root, "generated/schema.ts"), "schema\n");
     const session = await prepareWorktree(root);
     const stored = JSON.parse(await readFile(session.statePath, "utf8")) as {
@@ -294,7 +294,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     await writeFile(join(root, "generated/schema.ts"), "original\n");
     const session = await prepareWorktree(root);
 
@@ -313,7 +313,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     await writeFile(join(root, "generated/schema.ts"), "original\n", { mode: 0o644 });
     await writeFile(join(root, "generated/deleted.ts"), "delete me\n");
     const session = await prepareWorktree(root);
@@ -342,7 +342,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     await writeFile(join(root, "generated/schema.ts"), "original\n");
     const session = await prepareWorktree(root);
     await writeFile(join(session.worktreeRoot, "tracked.txt"), "candidate\n");
@@ -366,7 +366,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     await writeFile(join(root, "generated/schema.ts"), "original\n");
     const session = await prepareWorktree(root);
     await writeFile(join(session.worktreeRoot, "generated/schema.ts"), "changed\n");
@@ -389,7 +389,7 @@ describe("Qoder isolated worktree coordinator", () => {
       const root = await createFixture();
       await mkdir(join(root, "generated"), { recursive: true });
       await writeFile(join(root, ".gitignore"), "generated/\n");
-      await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+      await writeFile(join(root, ".dshinclude"), "generated/**\n");
       await writeFile(join(root, "generated/schema.ts"), "schema\n");
       const session = await prepareWorktree(root);
       if (operation === "reopen" || operation === "apply") {
@@ -417,7 +417,7 @@ describe("Qoder isolated worktree coordinator", () => {
     await mkdir(join(root, "generated/cache"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
     await writeFile(
-      join(root, ".qoderinclude"),
+      join(root, ".dshinclude"),
       "generated/**\n!generated/cache/**\ngenerated/cache/keep.ts\n",
     );
     await writeFile(join(root, "generated/api.ts"), "api\n");
@@ -436,7 +436,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await writeFile(join(root, "local.txt"), "local\n");
     await writeFile(
-      join(root, ".qoderinclude"),
+      join(root, ".dshinclude"),
       "generated/missing.ts\ngenerated/schemas/**\ntracked.txt\nlocal.txt\n",
     );
     const session = await prepareWorktree(root);
@@ -447,13 +447,13 @@ describe("Qoder isolated worktree coordinator", () => {
 
   it("rejects invalid include paths and glob syntax", async () => {
     const invalidRoot = await createFixture();
-    await writeFile(join(invalidRoot, ".qoderinclude"), "../secret\n");
+    await writeFile(join(invalidRoot, ".dshinclude"), "../secret\n");
     await expect(prepareWorktree(invalidRoot)).rejects.toMatchObject({
       code: "invalid_include_config",
     });
 
     const globRoot = await createFixture();
-    await writeFile(join(globRoot, ".qoderinclude"), "generated/[abc\n");
+    await writeFile(join(globRoot, ".dshinclude"), "generated/[abc\n");
     await expect(prepareWorktree(globRoot)).rejects.toMatchObject({
       code: "invalid_include_config",
     });
@@ -464,7 +464,7 @@ describe("Qoder isolated worktree coordinator", () => {
     await mkdir(join(root, "packages/a/generated"), { recursive: true });
     await mkdir(join(root, "packages/b/generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "packages/*/generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "packages/*/generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "packages/*/generated/**\n");
     await writeFile(join(root, "packages/a/generated/a.ts"), "a\n");
     await writeFile(join(root, "packages/b/generated/b.ts"), "b\n");
 
@@ -479,7 +479,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "/*.json\n/generated/*.ts\n");
-    await writeFile(join(root, ".qoderinclude"), "*.json\ngenerated/*.ts\n");
+    await writeFile(join(root, ".dshinclude"), "*.json\ngenerated/*.ts\n");
     await writeFile(join(root, "schema.json"), "{}\n");
     await writeFile(join(root, "generated/api.ts"), "api\n");
     const session = await prepareWorktree(root);
@@ -493,7 +493,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     await writeFile(join(root, "generated/huge.bin"), "");
     await truncate(join(root, "generated/huge.bin"), 256 * 1024 * 1024 + 1);
     const before = await listSessionRoots();
@@ -507,7 +507,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const generated = join(root, "generated");
     await mkdir(generated, { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     for (let start = 0; start < 20_001; start += 500) {
       await Promise.all(
         Array.from({ length: Math.min(500, 20_001 - start) }, (_, offset) =>
@@ -525,7 +525,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     await writeFile(join(root, "generated/schema.ts"), "schema\n");
     await symlink("schema.ts", join(root, "generated/current.ts"));
 
@@ -546,14 +546,14 @@ describe("Qoder isolated worktree coordinator", () => {
       const root = await createFixture();
       await mkdir(join(root, "generated"), { recursive: true });
       await writeFile(join(root, ".gitignore"), "generated/\n");
-      await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+      await writeFile(join(root, ".dshinclude"), "generated/**\n");
       await writeFile(join(root, "generated/schema.ts"), "schema\n");
       execFileSync("mkfifo", [join(root, "generated/schema.pipe")]);
 
       await expect(prepareWorktree(root)).rejects.toMatchObject({
         code: "unsupported_included_artifact",
       });
-      await writeFile(join(root, ".qoderinclude"), "generated/schema.pipe\n");
+      await writeFile(join(root, ".dshinclude"), "generated/schema.pipe\n");
       await expect(prepareWorktree(root)).rejects.toMatchObject({
         code: "unsupported_included_artifact",
       });
@@ -563,7 +563,7 @@ describe("Qoder isolated worktree coordinator", () => {
   it("does not modify the source when the reviewed patch no longer applies", async () => {
     const root = await createFixture();
     const session = await prepareWorktree(root);
-    await writeFile(join(session.worktreeRoot, "tracked.txt"), "qoder result\n");
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "dsh result\n");
     await createReviewPatch(session.statePath);
     await writeFile(join(root, "tracked.txt"), "concurrent source edit\n");
 
@@ -583,7 +583,7 @@ describe("Qoder isolated worktree coordinator", () => {
     const root = await createFixture();
     const session = await prepareWorktree(root);
     await writeFile(join(session.worktreeRoot, "tracked.txt"), "accepted first-pass work\n");
-    await writeFile(join(session.worktreeRoot, "qoder-new.txt"), "broken first pass\n");
+    await writeFile(join(session.worktreeRoot, "dsh-new.txt"), "broken first pass\n");
     const firstReview = await createReviewPatch(session.statePath);
     const firstPatch = await readFile(firstReview.session.reviewPatchPath, "utf8");
 
@@ -593,15 +593,15 @@ describe("Qoder isolated worktree coordinator", () => {
       operation: "reopen",
       phase: "prepared",
       statePath: await realpath(session.statePath),
-      qoderCwd: session.worktreeCwd,
-      changedFiles: ["qoder-new.txt", "tracked.txt"],
+      dshCwd: session.worktreeCwd,
+      changedFiles: ["dsh-new.txt", "tracked.txt"],
       indexModified: false,
       reviewAttempt: 1,
     });
     expect(await readFile(join(session.worktreeRoot, "tracked.txt"), "utf8")).toBe(
       "accepted first-pass work\n",
     );
-    expect(await readFile(join(session.worktreeRoot, "qoder-new.txt"), "utf8")).toBe(
+    expect(await readFile(join(session.worktreeRoot, "dsh-new.txt"), "utf8")).toBe(
       "broken first pass\n",
     );
     expect(await readFile(String(reopened.archivedPatchPath), "utf8")).toBe(firstPatch);
@@ -610,7 +610,7 @@ describe("Qoder isolated worktree coordinator", () => {
       session: { phase: "prepared", reviewAttempt: 1 },
     });
 
-    await writeFile(join(session.worktreeRoot, "qoder-new.txt"), "fixed second pass\n");
+    await writeFile(join(session.worktreeRoot, "dsh-new.txt"), "fixed second pass\n");
     const secondReview = await createReviewPatch(session.statePath);
     expect(secondReview.session.reviewAttempt).toBe(2);
     const finalPatch = await readFile(session.reviewPatchPath, "utf8");
@@ -619,7 +619,7 @@ describe("Qoder isolated worktree coordinator", () => {
 
     await applyReviewPatch(session.statePath);
     expect(await readFile(join(root, "tracked.txt"), "utf8")).toBe("accepted first-pass work\n");
-    expect(await readFile(join(root, "qoder-new.txt"), "utf8")).toBe("fixed second pass\n");
+    expect(await readFile(join(root, "dsh-new.txt"), "utf8")).toBe("fixed second pass\n");
   });
 
   it("refuses to reopen a reviewed worktree that drifted after patch generation", async () => {
@@ -652,7 +652,7 @@ describe("Qoder isolated worktree coordinator", () => {
     ]);
     expect(failedRunInspection).toMatchObject({
       phase: "prepared",
-      qoderCwd: session.worktreeCwd,
+      dshCwd: session.worktreeCwd,
       hasChanges: true,
       changedFiles: ["tracked.txt"],
       indexModified: false,
@@ -735,10 +735,10 @@ describe("Qoder isolated worktree coordinator", () => {
     expect(await pathExists(session.sessionRoot)).toBe(false);
   });
 
-  it("stops if Qoder changes the temporary Git index", async () => {
+  it("stops if DSH changes the temporary Git index", async () => {
     const root = await createFixture();
     const session = await prepareWorktree(root);
-    await writeFile(join(session.worktreeRoot, "tracked.txt"), "staged by qoder\n");
+    await writeFile(join(session.worktreeRoot, "tracked.txt"), "staged by dsh\n");
     git(session.worktreeRoot, ["add", "tracked.txt"]);
 
     await expect(inspectWorktree(session.statePath)).resolves.toMatchObject({
@@ -762,7 +762,7 @@ describe("generated worktree executable", () => {
     const root = await createFixture();
     await mkdir(join(root, "generated"), { recursive: true });
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await writeFile(join(root, ".qoderinclude"), "generated/**\n");
+    await writeFile(join(root, ".dshinclude"), "generated/**\n");
     await writeFile(join(root, "generated/schema.ts"), "schema\n");
 
     const executed = spawnSync(process.execPath, [worktreeRunnerPath, "prepare", "--cwd", root], {

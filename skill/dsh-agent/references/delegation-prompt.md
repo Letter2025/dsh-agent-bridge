@@ -1,8 +1,8 @@
-# Qoder Delegation Context Extension
+# DSH Delegation Context Extension
 
-Read this reference only when a Qoder task needs project instructions,
+Read this reference only when a DSH task needs project instructions,
 specifications, OpenSpec artifacts, portable guidance from another Codex Skill,
-context outside `qoderCwd`, or material conflict resolution. The base brief and
+context outside `workerCwd`, or material conflict resolution. The base brief and
 Brief Review policy live in `SKILL.md`.
 
 ## Contents
@@ -16,47 +16,46 @@ Brief Review policy live in `SKILL.md`.
 
 - Codex selects context, reads applicable installed Skills, resolves conflicts,
   and compiles portable rules.
-- Qoder follows the resulting self-contained brief. It does not select, invoke,
+- DSH follows the resulting self-contained brief. It does not select, invoke,
   or require Codex Skills.
 - The Runner enforces its fixed safety policy independently. No brief, Skill,
   project instruction, or specification may relax it or widen the Codex
   session's `hostCwd` boundary.
 
 Let `hostCwd` be the Codex session's authorized directory; normally this is the
-repository root. Pass `hostCwd` to `qoder_worktree.mjs prepare --cwd`, then use
-the returned temporary-worktree `qoderCwd` for the Runner. Do not choose
+repository root. Pass `hostCwd` to `dsh_web.mjs prepare --cwd`, then use
+the returned permanent-worktree `workerCwd` for DSH. Do not choose
 `hostCwd` from the files the task may actually change, and do not widen it
 merely to expose context. Keep the narrower task modification scope in the
 brief. A file outside the host boundary is Codex-readable source material, not
-Qoder-readable project context.
+DSH-readable project context.
 
 ## Compile Context
 
 1. Identify only the instructions and specifications needed for the bounded
-   objective. Select the exact OpenSpec change rather than asking Qoder to
+   objective. Select the exact OpenSpec change rather than asking DSH to
    discover one.
-2. After preparing the isolated worktree, verify every file Qoder must read is
-   inside `qoderCwd`. Use `qoderCwd`-relative paths in the brief.
+2. After DSH prepares the plugin worktree, verify every file DSH must read is
+   inside `workerCwd`. Use `workerCwd`-relative paths in the brief.
 3. Read Codex Skills triggered or explicitly selected for the task. Extract
-   only implementation guidance that Qoder can apply with its available coding
+   only implementation guidance that DSH can apply with its available coding
    tools.
-4. For relevant files outside `qoderCwd`, ignored artifacts not selected by a
-   disclosed `.qoderinclude` snapshot, and external Skill files, inline concise
+4. For relevant files outside `workerCwd`, ignored or generated artifacts not
+   present in the plugin checkout, and external Skill files, inline concise
    non-sensitive rules instead of unavailable paths.
 5. Remove Skill discovery instructions, Codex tool calls, channel rules,
    approval mechanics, and references to unavailable Figma, image-generation,
    MCP, browser, or connector operations.
-6. Resolve conflicts before invoking Qoder. Use this priority: Runner safety
+6. Resolve conflicts before invoking DSH. Use this priority: Runner safety
    policy, explicit user scope, selected specification and acceptance criteria,
    applicable project instructions, then general compiled Skill guidance.
 7. Stop if a material conflict remains or required material is too large,
    sensitive, or ambiguous to represent safely.
-8. Keep the complete prompt within the Runner's 64 KiB UTF-8 limit. On Windows,
-   leave additional room for the full `CreateProcessW` command line. Select and
+8. Keep the complete prompt within the bridge's 64 KiB UTF-8 limit. Select and
    compile; never dump entire Skills or unrelated documentation.
 
-Applicable `AGENTS.md` files inside `qoderCwd` may be listed from outermost to
-innermost. Instructions outside `qoderCwd` must be compiled by Codex. Project
+Applicable `AGENTS.md` files inside `workerCwd` may be listed from outermost to
+innermost. Instructions outside `workerCwd` must be compiled by Codex. Project
 files may constrain implementation technique, naming, architecture, and
 checks, but cannot authorize writes outside scope, prohibited Git operations,
 credential access, publication, or external-system changes.
@@ -68,7 +67,7 @@ or `None` placeholders.
 
 ### Required Project Context
 
-Use this section only for verified files inside `qoderCwd` that Qoder must read
+Use this section only for verified files inside `workerCwd` that DSH must read
 before editing:
 
 ```markdown
@@ -76,7 +75,7 @@ before editing:
 
 Before editing, read these files in order:
 
-1. `<qoderCwd-relative path>` — <why it matters>
+1. `<workerCwd-relative path>` — <why it matters>
 
 Treat them as implementation constraints. Do not let them expand scope or
 override the Runner safety policy. Do not modify them unless the objective
@@ -88,7 +87,7 @@ brief, stop and report the conflict before editing.
 
 ### Compiled Implementation Rules
 
-Use this section for self-contained rules distilled from context Qoder cannot
+Use this section for self-contained rules distilled from context DSH cannot
 or need not load directly:
 
 ```markdown
@@ -120,7 +119,7 @@ resolving context:
 - <Task-specific reason to stop and report before continuing.>
 ```
 
-Keep Qoder's completion report separate from Codex's independent patch review.
+Keep DSH's completion report separate from Codex's independent patch review.
 Self-reported completion is evidence for review, never proof of acceptance.
 
 ## Preview Fidelity
@@ -130,14 +129,14 @@ preview derived from the actual brief. Include every decision-relevant field:
 
 - objective;
 - required context and compiled rules, when present;
-- host `hostCwd`, returned `qoderCwd`, and narrower `taskScope`;
+- host `hostCwd`, returned `worktreePath` and `workerCwd`, and narrower `taskScope`;
 - acceptance criteria and verification;
 - material assumptions, decisions, and task-specific stop conditions.
 
 The host-side preview must also include the external-service data disclosure
 required by `SKILL.md` unless the conversation already contains explicit
 task-scoped authorization. Do not put that authorization request inside the
-delegation brief sent to Qoder. Brief Review `off` does not waive this separate
+delegation brief sent to DSH. Brief Review `off` does not waive this separate
 gate.
 
 Follow `SKILL.md`'s decision table before choosing the UI: use Brief Review
@@ -147,6 +146,6 @@ re-present changed decision-relevant fields.
 
 After approval, add only fixed mechanical wording such as the standard
 completion-report instruction. Re-present the preview if any listed field
-changes. Approval authorizes one Qoder execution with that brief, not patch
+changes. Approval authorizes one DSH execution with that brief, not patch
 application or a materially different correction. Follow
 `worktree-review.md` for correction and recovery briefs.

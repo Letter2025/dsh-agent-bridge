@@ -29,7 +29,7 @@ export async function resolveRepository(cwd: string): Promise<RepositoryContext>
   if (unmerged.trim() !== "") {
     throw new WorktreeError(
       "unsupported_repository_state",
-      "Resolve unmerged paths before starting an isolated Qoder worktree.",
+      "Resolve unmerged paths before starting an isolated DSH worktree.",
     );
   }
   return { sourceRoot, sourceCwd, baseCommit };

@@ -15,8 +15,9 @@ export default defineConfig([
   },
   {
     entry: {
-      "run-qoder": "packages/cli/src/run-qoder.ts",
-      "qoder-worktree": "packages/cli/src/qoder-worktree.ts",
+      "dsh-web": "packages/cli/src/dsh-web.ts",
+      "run-dsh": "packages/cli/src/run-dsh.ts",
+      "dsh-worktree": "packages/cli/src/dsh-worktree.ts",
     },
     outDir: "packages/cli/dist",
     outExtensions: outputExtensions,
@@ -26,14 +27,14 @@ export default defineConfig([
     treeshake: false,
     clean: true,
     deps: {
-      neverBundle: ["@qoder-agent-bridge/core"],
+      neverBundle: ["@dsh-agent-bridge/core"],
     },
   },
   {
     entry: {
-      run_qoder: "packages/cli/src/run-qoder.ts",
+      dsh_web: "packages/cli/src/dsh-web.ts",
     },
-    outDir: "skill/qoder-agent/scripts",
+    outDir: "skill/dsh-agent/scripts",
     outExtensions: () => ({ js: ".mjs" }),
     format: ["esm"],
     dts: false,
@@ -41,14 +42,14 @@ export default defineConfig([
     treeshake: false,
     clean: false,
     deps: {
-      alwaysBundle: ["@qoder-agent-bridge/core"],
+      alwaysBundle: ["@dsh-agent-bridge/core"],
     },
   },
   {
     entry: {
-      qoder_worktree: "packages/cli/src/qoder-worktree.ts",
+      run_dsh: "packages/cli/src/run-dsh.ts",
     },
-    outDir: "skill/qoder-agent/scripts",
+    outDir: "skill/dsh-agent/scripts",
     outExtensions: () => ({ js: ".mjs" }),
     format: ["esm"],
     dts: false,
@@ -56,7 +57,22 @@ export default defineConfig([
     treeshake: false,
     clean: false,
     deps: {
-      alwaysBundle: ["@qoder-agent-bridge/core"],
+      alwaysBundle: ["@dsh-agent-bridge/core"],
+    },
+  },
+  {
+    entry: {
+      dsh_worktree: "packages/cli/src/dsh-worktree.ts",
+    },
+    outDir: "skill/dsh-agent/scripts",
+    outExtensions: () => ({ js: ".mjs" }),
+    format: ["esm"],
+    dts: false,
+    sourcemap: false,
+    treeshake: false,
+    clean: false,
+    deps: {
+      alwaysBundle: ["@dsh-agent-bridge/core"],
     },
   },
 ]);

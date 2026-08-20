@@ -12,7 +12,7 @@ import {
   executeRunner,
   type ParsedRunnerArgs,
   type RunnerExecution,
-} from "@qoder-agent-bridge/core";
+} from "@dsh-agent-bridge/core";
 
 export const RESULT_FILE_SUFFIX = ".result.json";
 
@@ -46,23 +46,13 @@ async function persistResult(resultFile: string, result: RunnerExecution): Promi
 
 export function parseRunnerArgs(argv: string[]): ParsedRunnerArgs {
   const values: Record<string, string | undefined> = {};
-  const options = new Set([
-    "--cwd",
-    "--prompt",
-    "--prompt-file",
-    "--qodercli-path",
-    "--model",
-    "--timeout-ms",
-    "--max-model-request-retries",
-  ]);
+  const options = new Set(["--cwd", "--prompt", "--prompt-file", "--dsh-path", "--timeout-ms"]);
   const optionKeys: Record<string, string> = {
     "--cwd": "cwd",
     "--prompt": "prompt",
     "--prompt-file": "promptFile",
-    "--qodercli-path": "qodercliPath",
-    "--model": "model",
+    "--dsh-path": "dshPath",
     "--timeout-ms": "timeoutMs",
-    "--max-model-request-retries": "maxModelRequestRetries",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -101,10 +91,8 @@ export function parseRunnerArgs(argv: string[]): ParsedRunnerArgs {
   }
   for (const [key, option] of [
     ["promptFile", "--prompt-file"],
-    ["qodercliPath", "--qodercli-path"],
-    ["model", "--model"],
+    ["dshPath", "--dsh-path"],
     ["timeoutMs", "--timeout-ms"],
-    ["maxModelRequestRetries", "--max-model-request-retries"],
   ] as const) {
     const value = values[key];
     if (value !== undefined && value.trim() === "") {
@@ -116,10 +104,8 @@ export function parseRunnerArgs(argv: string[]): ParsedRunnerArgs {
     cwd,
     prompt,
     promptFile,
-    qodercliPath: values.qodercliPath,
-    model: values.model,
+    dshPath: values.dshPath,
     timeoutMs: values.timeoutMs,
-    maxModelRequestRetries: values.maxModelRequestRetries,
   };
 }
 
@@ -141,7 +127,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         await removeStaleResult(resultFile);
       }
       process.stderr.write(
-        "[run_qoder] running; wait for an explicit exit code and the final JSON envelope on stdout.\n",
+        "[run_dsh] running; wait for an explicit exit code and the final JSON envelope on stdout.\n",
       );
       result = await executeRunner(parsed, process.env, controller.signal);
     } catch (error) {
@@ -151,12 +137,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       try {
         await persistResult(resultFile, result);
       } catch {
-        process.stderr.write("[run_qoder] result_file_error\n");
+        process.stderr.write("[run_dsh] result_file_error\n");
       }
     }
     process.stdout.write(`${JSON.stringify(result.envelope)}\n`);
     if (result.exitCode !== 0) {
-      process.stderr.write(`[run_qoder] ${result.envelope.error?.code ?? "failed"}\n`);
+      process.stderr.write(`[run_dsh] ${result.envelope.error?.code ?? "failed"}\n`);
     }
     process.exitCode = result.exitCode;
   } finally {
